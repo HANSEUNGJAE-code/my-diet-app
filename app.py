@@ -15,16 +15,20 @@ except:
     GEMINI_API_KEY = None
 
 # ==========================================
-# 1. 모바일 최적화 CSS
+# 1. 모바일 최적화 CSS (스크롤 먹통 및 레이아웃 충돌 완벽 제거)
 # ==========================================
-st.set_page_config(page_title="브쌤's Diet 비서", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="브쌤's Diet 비서", layout="centered", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
+    /* iOS 강제 확대 방지용 16px 고정 */
     input, select, textarea { font-size: 16px !important; }
+    
+    /* 우측 상단 '...' 액션 요소 핀셋 제거 */
     [data-testid="stHeaderActionElements"] { display: none !important; }
     header { background: transparent !important; }
     
+    /* 사이드바 메뉴 텍스트 크기 확대 및 볼드체 */
     [data-testid="stSidebar"] label p { 
         font-size: 1.3rem !important; font-weight: 900 !important; color: #2C3E50 !important; padding: 5px 0;
     }
@@ -55,7 +59,6 @@ st.markdown("""
     .status-red .macro-diff { color: #E74C3C; }
     
     .micro-box { background-color:#FDFEFE; padding:10px; border-radius:8px; border:1px dashed #BDC3C7; text-align:center; font-size:0.9rem; color:#34495E; margin-bottom: 20px;}
-    
     .space-divider { margin-top: 35px; margin-bottom: 15px; }
     
     .diet-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
@@ -189,7 +192,7 @@ def generate_master_feedback(p):
 # ==========================================
 # 4. 앱 강제 라우팅 및 좌측 사이드바 마크다운 메뉴
 # ==========================================
-# 💡 단 한 번만 출력되는 글로벌(전역) 타이틀
+# 💡 단 한 번만 출력되는 글로벌(전역) 타이틀 (중복 출력 원천 차단)
 st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
 
 p_df = pd.read_sql("SELECT * FROM user_profile ORDER BY id DESC LIMIT 1", conn)
@@ -198,7 +201,7 @@ is_new_user = p_df.empty
 if is_new_user:
     st.warning("⚠️ 최초 1회 [정밀 대사 진단]을 완료해야 앱 메뉴가 활성화됩니다.")
     menu = "⚙️ 정밀 대사 재진단"
-    p = {} 
+    p = {} # 💡 신규 서버(데이터 없음) 에러 방지용 빈 껍데기 추가
 else:
     p = p_df.iloc[0]
     st.sidebar.markdown("### 📌 메뉴 이동")
