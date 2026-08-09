@@ -15,7 +15,7 @@ except:
     GEMINI_API_KEY = None
 
 # ==========================================
-# 1. 모바일 최적화 CSS (광고 워터마크 영구 삭제 포함)
+# 1. 모바일 최적화 CSS (광고 삭제 + 메뉴바 부활)
 # ==========================================
 st.set_page_config(page_title="브쌤's Diet 비서", layout="centered", initial_sidebar_state="collapsed")
 
@@ -24,9 +24,14 @@ st.markdown("""
     /* 🚨 스트림릿 무료 버전 광고 워터마크 완벽 파괴 🚨 */
     [class^="viewerBadge_"] { display: none !important; }
     div[data-testid="stToolbar"] { display: none !important; }
-    #MainMenu { visibility: hidden !important; }
-    header { visibility: hidden !important; }
-    footer { visibility: hidden !important; }
+    #MainMenu { display: none !important; }
+    footer { display: none !important; }
+    
+    /* 💡 수정됨: 헤더 자체는 살려두고(메뉴바 노출), 배경만 투명하게 */
+    header { background: transparent !important; }
+    
+    /* 💡 수정됨: 우측 상단의 깃허브, Deploy 등 잡다한 액션 버튼만 핀셋 제거 */
+    [data-testid="stHeaderActionElements"] { display: none !important; }
     
     /* iOS 강제 확대 방지용 16px 고정 */
     input, select, textarea { font-size: 16px !important; }
@@ -304,7 +309,10 @@ if menu == "📝 일일 기록 (메인)":
                                 genai.configure(api_key=GEMINI_API_KEY)
                                 model = genai.GenerativeModel('gemini-1.5-flash')
                                 prompt = '''이 사진이 '영양성분표'인지 '일반 음식'인지 판단해. 영양성분표면 숫자를 읽고, 음식이면 유추해. 추출: "name"(음식명), "carb"(탄수화물g), "protein"(단백질g), "fat"(지방g), "sugar"(당류g), "sat_fat"(포화지방g), "trans_fat"(트랜스지방g), "sodium"(나트륨mg), "fiber"(식이섬유g). "quality" 항목에 "좋은 음식", "주의 음식", "위험 음식" 중 하나로 판정. 무조건 JSON으로 답해. {"name": "음식명", "carb": 10, "protein": 20, "fat": 5, "sugar": 3, "sat_fat": 1, "trans_fat": 0, "sodium": 120, "fiber": 3, "quality": "좋은 음식"}'''
+                                
+                                img = Image.open(uploaded_file) 
                                 response = model.generate_content([prompt, img])
+                                
                                 result_text = response.text
                                 start_idx, end_idx = result_text.find('{'), result_text.rfind('}')
                                 if start_idx != -1 and end_idx != -1:
