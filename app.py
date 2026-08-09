@@ -189,14 +189,16 @@ def generate_master_feedback(p):
 # ==========================================
 # 4. 앱 강제 라우팅 및 좌측 사이드바 마크다운 메뉴
 # ==========================================
+# 💡 단 한 번만 출력되는 글로벌(전역) 타이틀
+st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
+
 p_df = pd.read_sql("SELECT * FROM user_profile ORDER BY id DESC LIMIT 1", conn)
 is_new_user = p_df.empty
 
 if is_new_user:
-    st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.warning("⚠️ 최초 1회 [정밀 대사 진단]을 완료해야 앱 메뉴가 활성화됩니다.")
     menu = "⚙️ 정밀 대사 재진단"
-    p = {} # 💡 해결: 신규 서버(데이터 없음) 에러 방지용 빈 데이터 껍데기
+    p = {} 
 else:
     p = p_df.iloc[0]
     st.sidebar.markdown("### 📌 메뉴 이동")
@@ -225,7 +227,6 @@ else:
 # [메뉴 1] 일일 기록 (기본 화면)
 # ------------------------------------------
 if menu == "📝 일일 기록 (메인)":
-    st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='date-display'>{date_display}</div>", unsafe_allow_html=True)
     
     c.execute("SELECT date, meal_time FROM diet_logs ORDER BY date DESC, meal_time DESC LIMIT 1")
@@ -405,7 +406,7 @@ if menu == "📝 일일 기록 (메인)":
             cw1, cw2 = st.columns(2)
             w_idx = ["잔", "컵", "리터(L)"].index(curr_w_un) if curr_w_un in ["잔", "컵", "리터(L)"] else 0
             with cw1: w_unit = st.selectbox("생수 단위 (전체)", ["잔", "컵", "리터(L)"], index=w_idx)
-            with cw2: water_manual_str = st.text_input("생수 섭취량 (수기 조작)", value=str(curr_w))
+            with cw2: water_manual_str = st.text_input("생수 총 섭취량 (수기 조작)", value=str(curr_w))
             
             cb1, cb2 = st.columns(2)
             b_idx = ["잔", "작은 캔", "큰 캔"].index(curr_b_un) if curr_b_un in ["잔", "작은 캔", "큰 캔"] else 0
@@ -527,8 +528,6 @@ if menu == "📝 일일 기록 (메인)":
 # [메뉴 2] 📅 달력 조회
 # ------------------------------------------
 elif menu == "📅 달력 조회":
-    st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
-    
     selected_date = st.date_input("📅 조회할 데이터베이스 날짜를 선택하세요", value=now.date())
     view_date_str = selected_date.strftime("%Y-%m-%d")
     
@@ -713,7 +712,6 @@ elif menu == "📅 달력 조회":
 # [메뉴 3] 대사 진단 리포트
 # ------------------------------------------
 elif menu == "📋 대사 진단 리포트":
-    st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown("### 📋 정밀 대사 진단 리포트")
     _, _, _, _, f_text = generate_master_feedback(p)
     st.markdown(f"<div class='report-box'>{f_text}</div>", unsafe_allow_html=True)
@@ -722,7 +720,6 @@ elif menu == "📋 대사 진단 리포트":
 # [메뉴 4] 정밀 대사 재진단
 # ------------------------------------------
 elif menu == "⚙️ 정밀 대사 재진단":
-    st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown("### ⚙️ 20개 변수 기반 정밀 대사 진단")
     st.info("이곳에서 분석된 데이터는 '달력 조회' 탭의 절대 목표치로 영구 저장됩니다.")
     
