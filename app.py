@@ -21,7 +21,7 @@ st.set_page_config(page_title="브쌤's Diet 비서", layout="centered", initial
 
 st.markdown("""
 <style>
-    /* 🚨 스트림릿 무료 버전 광고 워터마크(빨간 배, 비행기) 완벽 추적 파괴 🚨 */
+    /* 🚨 스트림릿 무료 버전 광고 워터마크 완벽 파괴 🚨 */
     [class^="viewerBadge_"] { display: none !important; }
     div[data-testid="stToolbar"] { display: none !important; }
     #MainMenu { visibility: hidden !important; }
@@ -165,7 +165,12 @@ def generate_master_feedback(p):
     
     h_m = h / 100
     bmr = (10 * w) + (6.25 * h) - (5 * a) + (5 if g == "남성" else -161)
-    act_multi = {"1단계": 1.2, "2단계": 1.375, "3단계": 1.55, "4단계": 1.725}.get(act[:3], 1.2)
+    
+    act_multi = 1.2
+    if "2단계" in act: act_multi = 1.375
+    elif "3단계" in act: act_multi = 1.55
+    elif "4단계" in act: act_multi = 1.725
+    
     tdee = bmr * act_multi
     deficit = 500 if w > t_w else 0
     target_cal = max(int(tdee - deficit), int(bmr) + 100)
@@ -445,10 +450,24 @@ if menu == "📝 일일 기록 (메인)":
         st.markdown("### 🏋️ 운동 기록 및 실시간 타이머")
         st.info("운동 종목을 먼저 선택한 후 타이머를 돌리거나, 아래 폼에서 수동으로 시간을 직접 기입하세요.")
         
-        ex_options = {"걷기/산책 (MET 3.8)": 3.8, "자전거/수영 (MET 7.0)": 7.0, "러닝/조깅 (MET 8.0)": 8.0, "웨이트 트레이닝 (MET 5.0)": 5.0, "요가/스트레칭 (MET 3.0)": 3.0, "천국의 계단/스텝밀 (MET 9.0)": 9.0}
+        # 기본 제공 메츠(METs) 옵션
+        ex_options_all = {"걷기/산책 (MET 3.8)": 3.8, "자전거/수영 (MET 7.0)": 7.0, "러닝/조깅 (MET 8.0)": 8.0, "웨이트 트레이닝 (MET 5.0)": 5.0, "요가/스트레칭 (MET 3.0)": 3.0, "천국의 계단/스텝밀 (MET 9.0)": 9.0, "운동 안 함 (MET 1.0)": 1.0, "맨몸 스트레칭 (MET 2.5)": 2.5, "인터벌 러닝/크로스핏 (MET 10.0)": 10.0, "격렬한 구기 종목 (축구, 농구 등) (MET 8.0)": 8.0, "고강도 웨이트/파워리프팅 (MET 6.0)": 6.0, "철인 3종/마라톤 훈련 (MET 12.0)": 12.0, "엘리트 체육/프로 선수 훈련 (MET 10.0)": 10.0}
         
-        if 'active_ex_name' not in st.session_state: st.session_state.active_ex_name = list(ex_options.keys())[0]
-        selected_ex = st.selectbox("1️⃣ 수행할 운동 종목 선택", list(ex_options.keys()), index=list(ex_options.keys()).index(st.session_state.active_ex_name))
+        # 사용자의 활동량 기반으로 필터링된 운동 종목 가져오기
+        current_act = p.get('activity_level', '1단계')
+        if "1단계" in current_act:
+            filtered_opts = ["운동 안 함 (MET 1.0)", "걷기/산책 (MET 3.8)", "맨몸 스트레칭 (MET 2.5)"]
+        elif "2단계" in current_act:
+            filtered_opts = ["러닝/조깅 (MET 8.0)", "요가/스트레칭 (MET 3.0)", "자전거/수영 (MET 7.0)"]
+        elif "3단계" in current_act:
+            filtered_opts = ["웨이트 트레이닝 (MET 5.0)", "인터벌 러닝/크로스핏 (MET 10.0)", "격렬한 구기 종목 (축구, 농구 등) (MET 8.0)"]
+        else:
+            filtered_opts = ["고강도 웨이트/파워리프팅 (MET 6.0)", "철인 3종/마라톤 훈련 (MET 12.0)", "엘리트 체육/프로 선수 훈련 (MET 10.0)"]
+
+        if 'active_ex_name' not in st.session_state or st.session_state.active_ex_name not in filtered_opts:
+            st.session_state.active_ex_name = filtered_opts[0]
+            
+        selected_ex = st.selectbox("1️⃣ 수행할 운동 종목 선택 (활동량 기반 자동 추천)", filtered_opts, index=filtered_opts.index(st.session_state.active_ex_name))
         st.session_state.active_ex_name = selected_ex
         
         st.markdown("##### 2️⃣ 실시간 타이머 가동")
@@ -481,7 +500,7 @@ if menu == "📝 일일 기록 (메인)":
             if st.form_submit_button("데이터베이스 연동"):
                 try:
                     ex_min = int(ex_min_str)
-                    met = ex_options[st.session_state.active_ex_name]
+                    met = ex_options_all.get(st.session_state.active_ex_name, 5.0)
                     user_w = float(safe_get(p.get('weight', 60.0), 60.0))
                     burned_cal = int((met * 3.5 * user_w * ex_min) / 200)
                     
@@ -740,8 +759,35 @@ elif menu == "⚙️ 정밀 대사 재진단":
         with c5: t_w_val_str = st.text_input("🎯 목표 체중 (kg)", value=str(p.get('target_weight', 55.0)))
         
         st.markdown("##### 🚶‍♂️ 일일 활동 및 식사 패턴")
-        act_val = st.selectbox("일과 중 활동량", ["1단계 (주로 앉아서 생활)", "2단계 (가벼운 활동/운동)", "3단계 (보통 수준의 활동/운동)", "4단계 (육체노동 또는 강도 높은 운동)"], index=0)
-        exc_val = st.selectbox("주요 훈련 종목", ["운동 안 함", "가벼운 스트레칭", "요가/홈트", "웨이트 트레이닝"], index=0)
+        act_options = [
+            "1단계 (주로 앉아서 생활)", 
+            "2단계 (가벼운 활동/운동)", 
+            "3단계 (보통 수준의 활동/운동)", 
+            "4단계 (육체노동 또는 강도 높은 운동)"
+        ]
+        try: act_idx = act_options.index(p.get('activity_level', '1단계 (주로 앉아서 생활)'))
+        except: act_idx = 0
+        
+        act_val = st.selectbox("일과 중 활동량", act_options, index=act_idx)
+        
+        # 💡 안 깨지는 박스형 줄바꿈 텍스트 및 단계별 동적 종목 할당 로직 복구
+        if "1단계" in act_val:
+            st.markdown("<div style='background-color:#F8F9FA; padding:10px; border-radius:8px; font-size:0.9rem; color:#34495E; margin-bottom:15px;'>✔️ 출퇴근 외에는 걷는 시간이 거의 없음<br>✔️ 하루 1만 보 미만<br>✔️ 사무직, 학생 등</div>", unsafe_allow_html=True)
+            exc_options = ["운동 안 함", "가벼운 산책(30분 내외)", "맨몸 스트레칭"]
+        elif "2단계" in act_val:
+            st.markdown("<div style='background-color:#F8F9FA; padding:10px; border-radius:8px; font-size:0.9rem; color:#34495E; margin-bottom:15px;'>✔️ 주 1~3회 가벼운 운동<br>✔️ 하루 1만 보 이상 걷기<br>✔️ 서서 일하는 직업 (교사, 서비스직 등)</div>", unsafe_allow_html=True)
+            exc_options = ["가벼운 조깅/러닝", "홈트레이닝/요가", "자전거/수영 (저강도)"]
+        elif "3단계" in act_val:
+            st.markdown("<div style='background-color:#F8F9FA; padding:10px; border-radius:8px; font-size:0.9rem; color:#34495E; margin-bottom:15px;'>✔️ 주 3~5회 규칙적인 땀나는 운동<br>✔️ 1시간 이상 중강도 훈련<br>✔️ 활동량 많은 직업 (택배, 영업 등)</div>", unsafe_allow_html=True)
+            exc_options = ["웨이트 트레이닝 (머신/프리웨이트)", "인터벌 러닝/크로스핏", "격렬한 구기 종목 (축구, 농구 등)"]
+        else:
+            st.markdown("<div style='background-color:#F8F9FA; padding:10px; border-radius:8px; font-size:0.9rem; color:#34495E; margin-bottom:15px;'>✔️ 주 6회 이상 고강도 훈련<br>✔️ 하루 2시간 이상 운동<br>✔️ 건설 현장 등 강도 높은 육체노동</div>", unsafe_allow_html=True)
+            exc_options = ["고강도 웨이트/파워리프팅", "철인 3종/마라톤 훈련", "엘리트 체육/프로 선수 훈련"]
+            
+        try: exc_idx = exc_options.index(p.get('exercise_type', exc_options[0]))
+        except: exc_idx = 0
+        
+        exc_val = st.selectbox("해당 단계 주요 훈련 종목", exc_options, index=exc_idx)
         
         cs1, cs2 = st.columns(2)
         with cs1: bed_hr = st.text_input("평균 취침 시간 (예: 23:30)", value=p.get('sleep_bed_hr', '23:30'))
