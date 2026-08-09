@@ -15,25 +15,16 @@ except:
     GEMINI_API_KEY = None
 
 # ==========================================
-# 1. 모바일 최적화 CSS (메뉴바 부활 + 워터마크 삭제)
+# 1. 모바일 최적화 CSS
 # ==========================================
-st.set_page_config(page_title="브쌤's Diet 비서", layout="centered", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="브쌤's Diet 비서", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
-    /* 🚨 스트림릿 무료 버전 광고 워터마크 완벽 파괴 🚨 */
-    [class^="viewerBadge_"] { display: none !important; }
-    div[data-testid="stToolbar"] { display: none !important; }
+    input, select, textarea { font-size: 16px !important; }
     [data-testid="stHeaderActionElements"] { display: none !important; }
-    footer { display: none !important; }
-    
-    /* 💡 메뉴바는 살려두고 배경만 투명화 */
     header { background: transparent !important; }
     
-    /* iOS 강제 확대 방지용 16px 고정 */
-    input, select, textarea { font-size: 16px !important; }
-    
-    /* 사이드바 메뉴 텍스트 크기 확대 및 볼드체 */
     [data-testid="stSidebar"] label p { 
         font-size: 1.3rem !important; font-weight: 900 !important; color: #2C3E50 !important; padding: 5px 0;
     }
@@ -64,6 +55,7 @@ st.markdown("""
     .status-red .macro-diff { color: #E74C3C; }
     
     .micro-box { background-color:#FDFEFE; padding:10px; border-radius:8px; border:1px dashed #BDC3C7; text-align:center; font-size:0.9rem; color:#34495E; margin-bottom: 20px;}
+    
     .space-divider { margin-top: 35px; margin-bottom: 15px; }
     
     .diet-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
@@ -338,7 +330,8 @@ if menu == "📝 일일 기록 (메인)":
                         with st.spinner("미량 영양소 정밀 분석 중..."):
                             try:
                                 genai.configure(api_key=GEMINI_API_KEY)
-                                model = genai.GenerativeModel('gemini-1.5-flash')
+                                # 💡 오류 해결: 모델 이름을 서버가 확실히 인식하는 풀네임(-latest)으로 변경
+                                model = genai.GenerativeModel('gemini-1.5-flash-latest')
                                 prompt = '''이 사진이 '영양성분표'인지 '일반 음식'인지 판단해. 영양성분표면 숫자를 읽고, 음식이면 유추해. 추출: "name"(음식명), "carb"(탄수화물g), "protein"(단백질g), "fat"(지방g), "sugar"(당류g), "sat_fat"(포화지방g), "trans_fat"(트랜스지방g), "sodium"(나트륨mg), "fiber"(식이섬유g). "quality" 항목에 "좋은 음식", "주의 음식", "위험 음식" 중 하나로 판정. 무조건 JSON으로 답해. {"name": "음식명", "carb": 10, "protein": 20, "fat": 5, "sugar": 3, "sat_fat": 1, "trans_fat": 0, "sodium": 120, "fiber": 3, "quality": "좋은 음식"}'''
                                 
                                 # 💡 수정 포인트: 누락되었던 이미지 객체 변환 코드 복구
