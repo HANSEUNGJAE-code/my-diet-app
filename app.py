@@ -136,7 +136,8 @@ def init_diet_db():
 conn = init_diet_db()
 c = conn.cursor()
 
-now = datetime.now()
+# 💡 날짜(시간) 연동 에러 수정: 서버의 미국 시간이 아닌 한국 표준시(KST)로 무조건 고정
+now = datetime.utcnow() + timedelta(hours=9)
 today_str = now.strftime("%Y-%m-%d")
 wd_map = {0:'월', 1:'화', 2:'수', 3:'목', 4:'금', 5:'토', 6:'일'}
 date_display = f"{now.strftime('%y - %m - %d')} ( {wd_map[now.weekday()]} )"
@@ -144,7 +145,7 @@ date_display = f"{now.strftime('%y - %m - %d')} ( {wd_map[now.weekday()]} )"
 def safe_get(val, default_val): return val if pd.notna(val) else default_val
 
 # ==========================================
-# 3. 진단 리포트 생성 함수 (가독성 100% 개선 및 무손실 반영)
+# 3. 진단 리포트 생성 함수 (Section 레이아웃 및 100% 동기화 적용)
 # ==========================================
 def generate_master_feedback(p):
     h = float(safe_get(p.get('height'), 160.0))
@@ -193,32 +194,33 @@ def generate_master_feedback(p):
     # 3. 훈련 종목에 따른 단백질 배분량 연동 변경
     p_ratio = 1.8
     if "웨이트" in exc or "고강도" in exc or "크로스핏" in exc or "마라톤" in exc:
-        p_ratio = 2.0  # 고강도 운동 시 체중당 단백질 2.0g 부여
+        p_ratio = 2.0
         
     protein_g = int(t_w * p_ratio) 
     fat_g = int((target_cal * 0.25) / 9)
     carb_g = int((target_cal - (protein_g * 4) - (fat_g * 9)) / 4)
 
-    # 💡 4. 리포트 생성 (가독성 향상을 위해 <br><br> 문단 띄어쓰기 대폭 추가)
-    adv = f"<div class='report-title'>📊 [ 체성분 및 활동 대사량 산출 ]</div>"
+    # 💡 4. 리포트 생성 (가독성을 위한 Section 넘버링 및 여백 디자인 완벽 적용)
+    adv = f"<div class='report-title'>📌 Section 1. [ 체성분 및 활동 대사량 산출 ]</div>"
     adv += f"<div class='report-p'>현재 고객님의 기초대사량은 <b>{int(bmr)} kcal</b>입니다.<br><br><b>[{act}]</b> 활동량과 <b>[{exc}]</b> 훈련 종목을 반영한 일일 총 에너지 소모량(TDEE)은 <b>{int(tdee)} kcal</b>로 분석되었습니다.<br><br>목표 체중({t_w}kg) 도달을 위해 <b>1일 권장 섭취량을 {target_cal} kcal</b>로 설정합니다.</div>"
     
-    adv += f"<div class='report-p'><b>📌 일일 다량영양소(Macronutrients) 기준치</b><div class='report-list'>• <b>탄수화물:</b> {carb_g}g <br>• <b>단백질:</b> {protein_g}g (체중 1kg당 {p_ratio}g 적용)<br>• <b>지방:</b> {fat_g}g</div>해당 데이터는 일별 식단 트래킹의 절대적 기준으로 자동 연동됩니다.</div>"
+    adv += f"<div class='report-title'>📌 Section 2. [ 일일 다량영양소(Macronutrients) 기준치 ]</div>"
+    adv += f"<div class='report-p'><div class='report-list'>• <b>탄수화물:</b> {carb_g}g <br><br>• <b>단백질:</b> {protein_g}g (체중 1kg당 {p_ratio}g 적용)<br><br>• <b>지방:</b> {fat_g}g</div><br>해당 데이터는 일별 식단 트래킹의 절대적 기준으로 자동 연동됩니다.</div>"
     
-    adv += f"<div class='report-title'>💤 [ 일주기 리듬 및 식사 패턴 평가 ]</div>"
+    adv += f"<div class='report-title'>📌 Section 3. [ 일주기 리듬 및 식사 패턴 평가 ]</div>"
     adv += f"<div class='report-p'>취침({bed_hr}) 및 기상({wake_hr})에 따른 호르몬 대사와 하루 <b>[{meal_cnt}]</b> 식사 주기를 분석했습니다.<br><br>원활한 인슐린 저항성 개선을 위해 첫 식사({f_hr})와 마지막 식사({l_hr}) 사이의 <b>생리적 공복 텀을 철저히 엄수</b>해 주시기 바랍니다.</div>"
     
-    adv += f"<div class='report-title'>🍽 [ 대사 증후군 위험도 및 식습관 진단 ]</div>"
+    adv += f"<div class='report-title'>📌 Section 4. [ 대사 증후군 위험도 및 식습관 진단 ]</div>"
     adv += f"<div class='report-p'>주 식단인 <b>[{carb}]</b> 위주의 식사 패턴 분석입니다.<br><br>"
-    if "배달음식" in carb or "면류" in carb: adv += "<span class='report-highlight'>현재 식단은 혈당의 급격한 스파이크 및 내장 지방 축적을 유발합니다. 반드시 복합 탄수화물 기반의 자연식(Whole food)으로 교체하십시오.</span></div>"
-    else: adv += "<span class='report-good'>대사 증후군 예방 및 혈당 관리에 매우 유리한 훌륭한 식단 기반을 갖추고 계십니다.</span></div>"
+    if "배달음식" in carb or "면류" in carb: adv += "<span class='report-highlight'>현재 식단은 혈당의 급격한 스파이크 및 내장 지방 축적을 유발합니다. 반드시 복합 탄수화물 기반의 자연식(Whole food)으로 교체하십시오.</span><br><br></div>"
+    else: adv += "<span class='report-good'>대사 증후군 예방 및 혈당 관리에 매우 유리한 훌륭한 식단 기반을 갖추고 계십니다.</span><br><br></div>"
     
     adv += f"<div class='report-p'><b>[{snack}]</b>을 <b>[{snack_freq}]</b>, 주로 <b>[{snack_time}]</b>에 <b>[{snack_amt}]</b> 섭취하는 패턴과 관련하여,<br><br>"
     if "초콜릿" in snack or "아이스크림" in snack: adv += "<span class='report-highlight'>다이어트 정체기를 유발하는 초가공 당류가 포함되어 있습니다. 즉각 무가당 그릭요거트나 견과류 등으로 대체하십시오.</span></div>"
     elif snack != "안 먹음": adv += "안정적인 클린 간식 선택이나, 총 섭취 칼로리를 초과하지 않도록 섭취량을 조절하십시오.</div>"
     else: adv += "불필요한 잉여 칼로리를 섭취하지 않는 훌륭한 패턴입니다.</div>"
     
-    adv += f"<div class='report-title'>💧 [ 수분 대사 및 액상 칼로리 점검 ]</div>"
+    adv += f"<div class='report-title'>📌 Section 5. [ 수분 대사 및 액상 칼로리 점검 ]</div>"
     adv += f"<div class='report-p'>현재 하루 <b>[{w_cnt} {w_unit}]</b>의 수분을 섭취 중이며, 부가적으로 <b>[{b_type}]</b>을 <b>[{b_cnt} {b_unit}]</b> 섭취하고 계십니다.<br><br>"
     if "액상과당" in b_type: adv += "<span class='report-highlight'>액상과당은 인슐린 저항성을 최악으로 치닫게 만듭니다. 즉각 제한하십시오.</span></div>"
     elif "제로" in b_type: adv += "<span class='report-good'>당류가 없는 제로 음료로의 대체는 긍정적이나, 인공감미료의 과다 섭취에 유의하십시오.</span></div>"
@@ -595,10 +597,8 @@ elif menu == "📅 달력 조회":
     </div>
     """, unsafe_allow_html=True)
     
-    t_cal_base = int(safe_get(p.get('target_calories'), 2000))
-    t_c_base = int(safe_get(p.get('target_carb'), 200))
-    t_p_base = int(safe_get(p.get('target_protein'), 100))
-    t_f_base = int(safe_get(p.get('target_fat'), 50))
+    # 💡 캘린더 강제 동기화: 썩은 DB 값을 버리고, 최신 프로필(p)을 바탕으로 실시간 다이렉트 재계산
+    t_cal_base, t_c_base, t_p_base, t_f_base, _ = generate_master_feedback(p)
     
     ex_df = pd.read_sql(f"SELECT * FROM exercise_logs WHERE date='{view_date_str}'", conn)
     burned_cal = ex_df['calories_burned'].sum() if not ex_df.empty else 0
@@ -849,7 +849,6 @@ elif menu == "⚙️ 정밀 대사 재진단":
             h_val, w_val, t_w_val = float(h_val_str), float(w_val_str), float(t_w_val_str)
             w_cnt, b_cnt = float(w_cnt_str), float(b_cnt_str)
             
-            # 💡 연동 버그 해결: DB에서 불러올 때의 변수명과 100% 동일하게 맞춰 무손실 연동 구현
             p_data = {
                 'gender': g_val, 'age': a_val, 'height': h_val, 'weight': w_val, 'target_weight': t_w_val, 
                 'activity_level': act_val, 'exercise_type': exc_val, 
@@ -873,7 +872,6 @@ elif menu == "⚙️ 정밀 대사 재진단":
                       (g_val, a_val, h_val, w_val, t_w_val, act_val, exc_val, t_cal, t_c, t_p, t_f, bed_hr, wake_hr, meal_cnt, f_hr, l_hr, carb_v, snack_v, snack_freq, snack_time, snack_amt, w_unit, w_cnt, b_type, b_unit, b_cnt))
             conn.commit()
             
-            # 💡 피드백 개선: 새로고침 방지 및 명확한 성공 메시지와 풍선 애니메이션 추가
             st.success("✅ 정밀 대사 진단 데이터가 완벽하게 저장되었습니다! 달력 조회 및 리포트 탭에 정상 연동되었습니다.")
             st.balloons()
             
