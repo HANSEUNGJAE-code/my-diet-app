@@ -196,11 +196,11 @@ if is_new_user:
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.warning("⚠️ 최초 1회 [정밀 대사 진단]을 완료해야 앱 메뉴가 활성화됩니다.")
     menu = "⚙️ 정밀 대사 재진단"
+    p = {} # 💡 해결: 신규 서버(데이터 없음) 에러 방지용 빈 데이터 껍데기
 else:
     p = p_df.iloc[0]
     st.sidebar.markdown("### 📌 메뉴 이동")
     
-    # HTML 태그 100% 제거 후 순수 텍스트 메뉴 적용
     menu_options = [
         "📝 일일 기록 (메인)", 
         "📅 달력 조회", 
@@ -255,7 +255,7 @@ if menu == "📝 일일 기록 (메인)":
         st.markdown(f"<div class='fasting-timer wait'><div class='fasting-title'>타이머 대기 중</div><div class='fasting-msg'>첫 식사 기록 요망</div></div>", unsafe_allow_html=True)
         
     tab_list = ["🥗 식단", "⏰ 습관", "🏋️ 운동", "📉 체중"]
-    if p.get('gender') == '여성': tab_list.append("🩸 주기")
+    if p.get('gender', '여성') == '여성': tab_list.append("🩸 주기")
     tabs = st.tabs(tab_list)
     
     # --- 식단 탭 ---
@@ -405,7 +405,7 @@ if menu == "📝 일일 기록 (메인)":
             cw1, cw2 = st.columns(2)
             w_idx = ["잔", "컵", "리터(L)"].index(curr_w_un) if curr_w_un in ["잔", "컵", "리터(L)"] else 0
             with cw1: w_unit = st.selectbox("생수 단위 (전체)", ["잔", "컵", "리터(L)"], index=w_idx)
-            with cw2: water_manual_str = st.text_input("생수 총 섭취량 (수기 조작)", value=str(curr_w))
+            with cw2: water_manual_str = st.text_input("생수 섭취량 (수기 조작)", value=str(curr_w))
             
             cb1, cb2 = st.columns(2)
             b_idx = ["잔", "작은 캔", "큰 캔"].index(curr_b_un) if curr_b_un in ["잔", "작은 캔", "큰 캔"] else 0
@@ -476,7 +476,7 @@ if menu == "📝 일일 기록 (메인)":
                 try:
                     ex_min = int(ex_min_str)
                     met = ex_options[st.session_state.active_ex_name]
-                    user_w = float(safe_get(p.get('weight'), 60.0))
+                    user_w = float(safe_get(p.get('weight', 60.0), 60.0))
                     burned_cal = int((met * 3.5 * user_w * ex_min) / 200)
                     
                     c.execute("INSERT INTO exercise_logs (date, ex_name, duration, calories_burned) VALUES (?, ?, ?, ?)", (today_str, st.session_state.active_ex_name.split(' (')[0], ex_min, burned_cal))
@@ -502,7 +502,8 @@ if menu == "📝 일일 기록 (메인)":
                     else:
                         c.execute(f"INSERT INTO daily_weight (date, weight) VALUES ('{today_str}', {today_w})")
                         
-                    c.execute(f"UPDATE user_profile SET weight = {today_w} WHERE id = {p['id']}")
+                    if not is_new_user:
+                        c.execute(f"UPDATE user_profile SET weight = {today_w} WHERE id = {p['id']}")
                     conn.commit()
                     st.success("저장되었습니다.")
                 except ValueError: st.error("숫자만 입력해주세요.")
@@ -512,17 +513,18 @@ if menu == "📝 일일 기록 (메인)":
         with tabs[4]:
             st.markdown("##### 🩸 주기 업데이트")
             with st.form("period_tracker"):
-                last_p_date = st.text_input("최근 생리 시작일 (예: 2026-08-01)", value=str(safe_get(p.get('last_period_date'), "")))
+                last_p_date = st.text_input("최근 생리 시작일 (예: 2026-08-01)", value=str(safe_get(p.get('last_period_date', ''), "")))
                 if st.form_submit_button("저장"):
                     try:
                         valid_date = datetime.strptime(last_p_date.strip(), "%Y-%m-%d")
-                        c.execute(f"UPDATE user_profile SET last_period_date = '{last_p_date}' WHERE id = {p['id']}")
-                        conn.commit()
+                        if not is_new_user:
+                            c.execute(f"UPDATE user_profile SET last_period_date = '{last_p_date}' WHERE id = {p['id']}")
+                            conn.commit()
                         st.success("저장 완료. 달력 조회에서 피드백을 확인하세요.")
                     except ValueError: st.error("날짜 형식을 맞춰주세요.")
 
 # ------------------------------------------
-# [메뉴 2] 📅 달력 조회 (데이터베이스 통합본)
+# [메뉴 2] 📅 달력 조회
 # ------------------------------------------
 elif menu == "📅 달력 조회":
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
@@ -548,10 +550,10 @@ elif menu == "📅 달력 조회":
     </div>
     """, unsafe_allow_html=True)
     
-    t_cal_base = int(safe_get(p.get('target_calories'), 2000))
-    t_c_base = int(safe_get(p.get('target_carb'), 200))
-    t_p_base = int(safe_get(p.get('target_protein'), 100))
-    t_f_base = int(safe_get(p.get('target_fat'), 50))
+    t_cal_base = int(safe_get(p.get('target_calories', 2000), 2000))
+    t_c_base = int(safe_get(p.get('target_carb', 200), 200))
+    t_p_base = int(safe_get(p.get('target_protein', 100), 100))
+    t_f_base = int(safe_get(p.get('target_fat', 50), 50))
     
     ex_df = pd.read_sql(f"SELECT * FROM exercise_logs WHERE date='{view_date_str}'", conn)
     burned_cal = ex_df['calories_burned'].sum() if not ex_df.empty else 0
