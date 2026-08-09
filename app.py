@@ -148,12 +148,17 @@ def sync_from_sheets(conn):
         except: pass
     return success
 
+# 💡 숨겨져 있던 에러를 명확히 화면에 띄워주도록 수정
 def commit_and_sync(conn, table_names=None):
     conn.commit()
     client = get_gsheet_client()
-    if not client: return
+    if not client: 
+        st.error("⚠️ 클라우드 연결 실패: 금고(Secrets)의 JSON 열쇠가 잘못되었습니다.")
+        return
     try: sheet = client.open("my_diet_db")
-    except: return
+    except Exception as e: 
+        st.error(f"⚠️ 엑셀 접근 실패: 로봇이 초대되지 않았거나 이름이 다릅니다. 상세 오류: {e}")
+        return
     
     tables = table_names if table_names else ['user_profile', 'daily_habits', 'beverage_logs', 'exercise_logs', 'diet_logs', 'daily_weight']
     for t in tables:
@@ -292,6 +297,30 @@ else:
         if abs(current_w - base_weight) >= 2.0:
             st.sidebar.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
             st.sidebar.error("🚨 **대사량 재설정 요망!**\n\n기준 체중 대비 2kg 이상의 변화가 감지되었습니다. 정체기 및 근손실 방지를 위해 [정밀 대사 재진단]을 수행해 주세요.")
+
+    # 💡 수동 강제 백업 (에러 확인용 겸용) 버튼 추가
+    st.sidebar.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+    if st.sidebar.button("☁️ 수동 강제 백업 (Excel 전송)", use_container_width=True):
+        with st.spinner("엑셀과 통신 중..."):
+            client = get_gsheet_client()
+            if not client:
+                st.sidebar.error("❌ 통신 실패: 금고(Secrets)의 JSON 열쇠 형식이 잘못되었거나 없습니다.")
+            else:
+                try:
+                    sheet = client.open("my_diet_db")
+                    tables = ['user_profile', 'daily_habits', 'beverage_logs', 'exercise_logs', 'diet_logs', 'daily_weight']
+                    for t in tables:
+                        try: ws = sheet.worksheet(t)
+                        except: ws = sheet.add_worksheet(title=t, rows="100", cols="30")
+                        df = pd.read_sql(f"SELECT * FROM {t}", conn)
+                        ws.clear()
+                        if not df.empty:
+                            data = [df.columns.values.tolist()] + df.astype(str).values.tolist()
+                            try: ws.update(data)
+                            except: ws.update('A1', data)
+                    st.sidebar.success("✅ 엑셀 전송 완료! PC에서 엑셀 화면을 확인해보세요.")
+                except Exception as e:
+                    st.sidebar.error(f"❌ 엑셀 접근 거부: 로봇 이메일 초대 누락 또는 파일명 불일치. 상세 에러: {e}")
 
 # ==========================================
 # 5. 페이지 렌더링
@@ -493,7 +522,6 @@ if menu == "📝 일일 기록 (메인)":
                     w_man_amt = float(water_manual_str)
                     b_man_amt = float(bev_manual_str)
                     
-                    # 💡 원인 해결: 'id'가 아니라 'date' 컬럼으로 검색하도록 오류 완벽 수정!
                     c.execute(f"SELECT date FROM daily_habits WHERE date='{today_str}'")
                     if c.fetchone():
                         c.execute(f"""UPDATE daily_habits SET bed_time='{bed_t_str}', wake_time='{wake_t_str}', water_unit='{w_unit}', water_amt={w_man_amt} WHERE date='{today_str}'""")
