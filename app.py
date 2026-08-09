@@ -148,7 +148,6 @@ def sync_from_sheets(conn):
         except: pass
     return success
 
-# 💡 숨겨져 있던 에러를 명확히 화면에 띄워주도록 수정
 def commit_and_sync(conn, table_names=None):
     conn.commit()
     client = get_gsheet_client()
@@ -157,7 +156,7 @@ def commit_and_sync(conn, table_names=None):
         return
     try: sheet = client.open("my_diet_db")
     except Exception as e: 
-        st.error(f"⚠️ 엑셀 접근 실패: 로봇이 초대되지 않았거나 이름이 다릅니다. 상세 오류: {e}")
+        st.error(f"⚠️ 엑셀 접근 실패: 로봇이 초대되지 않았거나 이름이 다릅니다. 상세 에러: {e}")
         return
     
     tables = table_names if table_names else ['user_profile', 'daily_habits', 'beverage_logs', 'exercise_logs', 'diet_logs', 'daily_weight']
@@ -168,7 +167,9 @@ def commit_and_sync(conn, table_names=None):
             df = pd.read_sql(f"SELECT * FROM {t}", conn)
             ws.clear()
             if not df.empty:
-                data = [df.columns.values.tolist()] + df.astype(str).values.tolist()
+                # 💡 핵심 수정: 파이썬의 빈칸(NaN, None 등) 기호를 엑셀이 좋아하는 깔끔한 빈칸("")으로 싹 청소합니다!
+                clean_df = df.fillna("").astype(str).replace(["nan", "NaN", "None", "<NA>"], "")
+                data = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
                 try: ws.update(data)
                 except: ws.update('A1', data)
         except: pass
@@ -298,7 +299,6 @@ else:
             st.sidebar.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
             st.sidebar.error("🚨 **대사량 재설정 요망!**\n\n기준 체중 대비 2kg 이상의 변화가 감지되었습니다. 정체기 및 근손실 방지를 위해 [정밀 대사 재진단]을 수행해 주세요.")
 
-    # 💡 수동 강제 백업 (에러 확인용 겸용) 버튼 추가
     st.sidebar.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
     if st.sidebar.button("☁️ 수동 강제 백업 (Excel 전송)", use_container_width=True):
         with st.spinner("엑셀과 통신 중..."):
@@ -315,7 +315,9 @@ else:
                         df = pd.read_sql(f"SELECT * FROM {t}", conn)
                         ws.clear()
                         if not df.empty:
-                            data = [df.columns.values.tolist()] + df.astype(str).values.tolist()
+                            # 💡 핵심 수정 파트: 수동 백업 시에도 NaN을 말끔히 지워 에러 방지
+                            clean_df = df.fillna("").astype(str).replace(["nan", "NaN", "None", "<NA>"], "")
+                            data = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
                             try: ws.update(data)
                             except: ws.update('A1', data)
                     st.sidebar.success("✅ 엑셀 전송 완료! PC에서 엑셀 화면을 확인해보세요.")
