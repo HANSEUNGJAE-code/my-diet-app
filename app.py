@@ -747,96 +747,94 @@ elif menu == "⚙️ 정밀 대사 재진단":
     st.markdown("### ⚙️ 20개 변수 기반 정밀 대사 진단")
     st.info("이곳에서 분석된 데이터는 '달력 조회' 탭의 절대 목표치로 영구 저장됩니다.")
     
-    with st.form("diagnosis_form"):
-        st.markdown("##### 👤 체성분 및 목표 설정")
-        c1, c2 = st.columns(2)
-        with c1: g_val = st.selectbox("성별", ["여성", "남성"], index=["여성", "남성"].index(p.get('gender', '여성')) if not is_new_user else 0)
-        with c2: a_val_str = st.text_input("만 나이", value=str(p.get('age', 30)))
+    st.markdown("##### 👤 체성분 및 목표 설정")
+    c1, c2 = st.columns(2)
+    with c1: g_val = st.selectbox("성별", ["여성", "남성"], index=["여성", "남성"].index(p.get('gender', '여성')) if not is_new_user else 0)
+    with c2: a_val_str = st.text_input("만 나이", value=str(p.get('age', 30)))
+    
+    c3, c4, c5 = st.columns(3)
+    with c3: h_val_str = st.text_input("신장 (cm)", value=str(p.get('height', 160.0)))
+    with c4: w_val_str = st.text_input("현재 체중 (kg)", value=str(p.get('weight', 60.0)))
+    with c5: t_w_val_str = st.text_input("🎯 목표 체중 (kg)", value=str(p.get('target_weight', 55.0)))
+    
+    st.markdown("##### 🚶‍♂️ 일일 활동 및 식사 패턴")
+    act_options = [
+        "1단계 (주로 앉아서 생활)", 
+        "2단계 (가벼운 활동/운동)", 
+        "3단계 (보통 수준의 활동/운동)", 
+        "4단계 (육체노동 또는 강도 높은 운동)"
+    ]
+    try: act_idx = act_options.index(p.get('activity_level', '1단계 (주로 앉아서 생활)'))
+    except: act_idx = 0
+    
+    act_val = st.selectbox("일과 중 활동량", act_options, index=act_idx)
+    
+    if "1단계" in act_val:
+        st.markdown("<div style='background-color:#F8F9FA; padding:10px; border-radius:8px; font-size:0.9rem; color:#34495E; margin-bottom:15px;'>✔️ 출퇴근 외에는 걷는 시간이 거의 없음<br>✔️ 하루 1만 보 미만<br>✔️ 사무직, 학생 등</div>", unsafe_allow_html=True)
+        exc_options = ["운동 안 함", "가벼운 산책(30분 내외)", "맨몸 스트레칭"]
+    elif "2단계" in act_val:
+        st.markdown("<div style='background-color:#F8F9FA; padding:10px; border-radius:8px; font-size:0.9rem; color:#34495E; margin-bottom:15px;'>✔️ 주 1~3회 가벼운 운동<br>✔️ 하루 1만 보 이상 걷기<br>✔️ 서서 일하는 직업 (교사, 서비스직 등)</div>", unsafe_allow_html=True)
+        exc_options = ["가벼운 조깅/러닝", "홈트레이닝/요가", "자전거/수영 (저강도)"]
+    elif "3단계" in act_val:
+        st.markdown("<div style='background-color:#F8F9FA; padding:10px; border-radius:8px; font-size:0.9rem; color:#34495E; margin-bottom:15px;'>✔️ 주 3~5회 규칙적인 땀나는 운동<br>✔️ 1시간 이상 중강도 훈련<br>✔️ 활동량 많은 직업 (택배, 영업 등)</div>", unsafe_allow_html=True)
+        exc_options = ["웨이트 트레이닝 (머신/프리웨이트)", "인터벌 러닝/크로스핏", "격렬한 구기 종목 (축구, 농구 등)"]
+    else:
+        st.markdown("<div style='background-color:#F8F9FA; padding:10px; border-radius:8px; font-size:0.9rem; color:#34495E; margin-bottom:15px;'>✔️ 주 6회 이상 고강도 훈련<br>✔️ 하루 2시간 이상 운동<br>✔️ 건설 현장 등 강도 높은 육체노동</div>", unsafe_allow_html=True)
+        exc_options = ["고강도 웨이트/파워리프팅", "철인 3종/마라톤 훈련", "엘리트 체육/프로 선수 훈련"]
         
-        c3, c4, c5 = st.columns(3)
-        with c3: h_val_str = st.text_input("신장 (cm)", value=str(p.get('height', 160.0)))
-        with c4: w_val_str = st.text_input("현재 체중 (kg)", value=str(p.get('weight', 60.0)))
-        with c5: t_w_val_str = st.text_input("🎯 목표 체중 (kg)", value=str(p.get('target_weight', 55.0)))
-        
-        st.markdown("##### 🚶‍♂️ 일일 활동 및 식사 패턴")
-        act_options = [
-            "1단계 (주로 앉아서 생활)", 
-            "2단계 (가벼운 활동/운동)", 
-            "3단계 (보통 수준의 활동/운동)", 
-            "4단계 (육체노동 또는 강도 높은 운동)"
-        ]
-        try: act_idx = act_options.index(p.get('activity_level', '1단계 (주로 앉아서 생활)'))
-        except: act_idx = 0
-        
-        act_val = st.selectbox("일과 중 활동량", act_options, index=act_idx)
-        
-        # 💡 안 깨지는 박스형 줄바꿈 텍스트 및 단계별 동적 종목 할당 로직 복구
-        if "1단계" in act_val:
-            st.markdown("<div style='background-color:#F8F9FA; padding:10px; border-radius:8px; font-size:0.9rem; color:#34495E; margin-bottom:15px;'>✔️ 출퇴근 외에는 걷는 시간이 거의 없음<br>✔️ 하루 1만 보 미만<br>✔️ 사무직, 학생 등</div>", unsafe_allow_html=True)
-            exc_options = ["운동 안 함", "가벼운 산책(30분 내외)", "맨몸 스트레칭"]
-        elif "2단계" in act_val:
-            st.markdown("<div style='background-color:#F8F9FA; padding:10px; border-radius:8px; font-size:0.9rem; color:#34495E; margin-bottom:15px;'>✔️ 주 1~3회 가벼운 운동<br>✔️ 하루 1만 보 이상 걷기<br>✔️ 서서 일하는 직업 (교사, 서비스직 등)</div>", unsafe_allow_html=True)
-            exc_options = ["가벼운 조깅/러닝", "홈트레이닝/요가", "자전거/수영 (저강도)"]
-        elif "3단계" in act_val:
-            st.markdown("<div style='background-color:#F8F9FA; padding:10px; border-radius:8px; font-size:0.9rem; color:#34495E; margin-bottom:15px;'>✔️ 주 3~5회 규칙적인 땀나는 운동<br>✔️ 1시간 이상 중강도 훈련<br>✔️ 활동량 많은 직업 (택배, 영업 등)</div>", unsafe_allow_html=True)
-            exc_options = ["웨이트 트레이닝 (머신/프리웨이트)", "인터벌 러닝/크로스핏", "격렬한 구기 종목 (축구, 농구 등)"]
-        else:
-            st.markdown("<div style='background-color:#F8F9FA; padding:10px; border-radius:8px; font-size:0.9rem; color:#34495E; margin-bottom:15px;'>✔️ 주 6회 이상 고강도 훈련<br>✔️ 하루 2시간 이상 운동<br>✔️ 건설 현장 등 강도 높은 육체노동</div>", unsafe_allow_html=True)
-            exc_options = ["고강도 웨이트/파워리프팅", "철인 3종/마라톤 훈련", "엘리트 체육/프로 선수 훈련"]
+    try: exc_idx = exc_options.index(p.get('exercise_type', exc_options[0]))
+    except: exc_idx = 0
+    
+    exc_val = st.selectbox("해당 단계 주요 훈련 종목", exc_options, index=exc_idx)
+    
+    cs1, cs2 = st.columns(2)
+    with cs1: bed_hr = st.text_input("평균 취침 시간 (예: 23:30)", value=p.get('sleep_bed_hr', '23:30'))
+    with cs2: wake_hr = st.text_input("평균 기상 시간 (예: 07:00)", value=p.get('sleep_wake_hr', '07:00'))
+    
+    cm1, cm2, cm3 = st.columns(3)
+    with cm1: meal_cnt = st.selectbox("식사 횟수", ["1끼", "2끼", "3끼", "4끼 이상"], index=2)
+    with cm2: f_hr = st.text_input("첫 식사 시간", value=p.get('first_meal_hr', '08:00'))
+    with cm3: l_hr = st.text_input("마지막 식사 시간", value=p.get('last_meal_hr', '19:00'))
+    
+    carb_v = st.selectbox("메인 식단 베이스", ["채소 위주 샐러드", "곡물 샐러드볼", "육류 샐러드", "목초사육 소고기/연어", "비건 식단", "다이어트 정식", "일반 한식 백반", "면류/배달음식"], index=5)
+    
+    st.markdown("##### 🍩 간식 및 수분 섭취")
+    snack_v = st.selectbox("주요 간식", ["안 먹음", "로스팅 캐슈넛/참크래커", "단백질바/에너지바", "초콜릿/과자/아이스크림 등"], index=0)
+    
+    cw1, cw2, cw3 = st.columns(3)
+    with cw1: snack_freq = st.selectbox("간식 빈도", ["안 먹음", "주 1~2회", "주 3~4회", "매일 1회", "수시로"], index=0)
+    with cw2: snack_time = st.selectbox("간식 시간대", ["없음", "오전", "오후", "야간"], index=0)
+    with cw3: snack_amt = st.selectbox("간식 섭취량", ["없음", "소량", "다량"], index=0)
+    
+    cw4, cw5 = st.columns([3,7])
+    with cw4: w_unit = st.selectbox("생수 단위 선택", ["잔", "컵", "리터(L)"], index=0)
+    with cw5: w_cnt_str = st.text_input("하루 평균 생수 섭취량", value=str(p.get('water_cnt', 8.0)))
+    
+    cb1, cb2 = st.columns([3,7])
+    with cb1: b_unit = st.selectbox("타 음료 단위 선택", ["작은 캔", "큰 캔", "잔"], index=0)
+    with cb2: b_cnt_str = st.text_input("타 액상 섭취량", value=str(p.get('bev_cnt', 1.0)))
+    b_type = st.selectbox("주로 마시는 음료 종류", ["안 마심", "제로 슈거 음료", "디카페인 커피 등", "일반 액상과당 (주스/탄산)"], index=0)
+    
+    if st.button("🚀 분석 후 기준 데이터 저장", type="primary", use_container_width=True):
+        try:
+            a_val = int(a_val_str)
+            h_val, w_val, t_w_val = float(h_val_str), float(w_val_str), float(t_w_val_str)
+            w_cnt, b_cnt = float(w_cnt_str), float(b_cnt_str)
             
-        try: exc_idx = exc_options.index(p.get('exercise_type', exc_options[0]))
-        except: exc_idx = 0
-        
-        exc_val = st.selectbox("해당 단계 주요 훈련 종목", exc_options, index=exc_idx)
-        
-        cs1, cs2 = st.columns(2)
-        with cs1: bed_hr = st.text_input("평균 취침 시간 (예: 23:30)", value=p.get('sleep_bed_hr', '23:30'))
-        with cs2: wake_hr = st.text_input("평균 기상 시간 (예: 07:00)", value=p.get('sleep_wake_hr', '07:00'))
-        
-        cm1, cm2, cm3 = st.columns(3)
-        with cm1: meal_cnt = st.selectbox("식사 횟수", ["1끼", "2끼", "3끼", "4끼 이상"], index=2)
-        with cm2: f_hr = st.text_input("첫 식사 시간", value=p.get('first_meal_hr', '08:00'))
-        with cm3: l_hr = st.text_input("마지막 식사 시간", value=p.get('last_meal_hr', '19:00'))
-        
-        carb_v = st.selectbox("메인 식단 베이스", ["채소 위주 샐러드", "곡물 샐러드볼", "육류 샐러드", "목초사육 소고기/연어", "비건 식단", "다이어트 정식", "일반 한식 백반", "면류/배달음식"], index=5)
-        
-        st.markdown("##### 🍩 간식 및 수분 섭취")
-        snack_v = st.selectbox("주요 간식", ["안 먹음", "로스팅 캐슈넛/참크래커", "단백질바/에너지바", "초콜릿/과자/아이스크림 등"], index=0)
-        
-        cw1, cw2, cw3 = st.columns(3)
-        with cw1: snack_freq = st.selectbox("간식 빈도", ["안 먹음", "주 1~2회", "주 3~4회", "매일 1회", "수시로"], index=0)
-        with cw2: snack_time = st.selectbox("간식 시간대", ["없음", "오전", "오후", "야간"], index=0)
-        with cw3: snack_amt = st.selectbox("간식 섭취량", ["없음", "소량", "다량"], index=0)
-        
-        cw4, cw5 = st.columns([3,7])
-        with cw4: w_unit = st.selectbox("생수 단위 선택", ["잔", "컵", "리터(L)"], index=0)
-        with cw5: w_cnt_str = st.text_input("하루 평균 생수 섭취량", value=str(p.get('water_cnt', 8.0)))
-        
-        cb1, cb2 = st.columns([3,7])
-        with cb1: b_unit = st.selectbox("타 음료 단위 선택", ["작은 캔", "큰 캔", "잔"], index=0)
-        with cb2: b_cnt_str = st.text_input("타 액상 섭취량", value=str(p.get('bev_cnt', 1.0)))
-        b_type = st.selectbox("주로 마시는 음료 종류", ["안 마심", "제로 슈거 음료", "디카페인 커피 등", "일반 액상과당 (주스/탄산)"], index=0)
-        
-        if st.form_submit_button("🚀 분석 후 기준 데이터 저장", type="primary"):
-            try:
-                a_val = int(a_val_str)
-                h_val, w_val, t_w_val = float(h_val_str), float(w_val_str), float(t_w_val_str)
-                w_cnt, b_cnt = float(w_cnt_str), float(b_cnt_str)
-                
-                p_data = {'g':g_val, 'a':a_val, 'h':h_val, 'w':w_val, 't_w':t_w_val, 'act':act_val, 'exc':exc_val, 'b_hr':bed_hr, 'w_hr':wake_hr, 'm_cnt':meal_cnt, 'f_hr':f_hr, 'l_hr':l_hr, 'carb_type':carb_v, 'snack_type':snack_v, 'snack_freq':snack_freq, 'snack_time':snack_time, 'snack_amt':snack_amt, 'w_unit':w_unit, 'w_cnt':w_cnt, 'b_type':b_type, 'b_unit':b_unit, 'b_cnt':b_cnt}
-                
-                t_cal, t_c, t_p, t_f, _ = generate_master_feedback(p_data)
-                
-                c.execute("DELETE FROM user_profile")
-                c.execute("""INSERT INTO user_profile 
-                             (gender, age, height, weight, target_weight, activity_level, exercise_type, 
-                              target_calories, target_carb, target_protein, target_fat, sleep_bed_hr, sleep_wake_hr,
-                              meal_count, first_meal_hr, last_meal_hr, carb_type, snack_type, snack_freq, snack_time, snack_amt, 
-                              water_unit, water_cnt, bev_type, bev_unit, bev_cnt) 
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", 
-                          (g_val, a_val, h_val, w_val, t_w_val, act_val, exc_val, t_cal, t_c, t_p, t_f, bed_hr, wake_hr, meal_cnt, f_hr, l_hr, carb_v, snack_v, snack_freq, snack_time, snack_amt, w_unit, w_cnt, b_type, b_unit, b_cnt))
-                conn.commit()
-                st.success("데이터가 기준점으로 완벽하게 저장되었습니다. 좌측 메뉴를 이용해 이동하세요!")
-                st.rerun()
-            except ValueError:
-                st.error("나이, 신장, 체중 등의 수치 항목은 반드시 숫자만 입력해주세요.")
+            p_data = {'g':g_val, 'a':a_val, 'h':h_val, 'w':w_val, 't_w':t_w_val, 'act':act_val, 'exc':exc_val, 'b_hr':bed_hr, 'w_hr':wake_hr, 'm_cnt':meal_cnt, 'f_hr':f_hr, 'l_hr':l_hr, 'carb_type':carb_v, 'snack_type':snack_v, 'snack_freq':snack_freq, 'snack_time':snack_time, 'snack_amt':snack_amt, 'w_unit':w_unit, 'w_cnt':w_cnt, 'b_type':b_type, 'b_unit':b_unit, 'b_cnt':b_cnt}
+            
+            t_cal, t_c, t_p, t_f, _ = generate_master_feedback(p_data)
+            
+            c.execute("DELETE FROM user_profile")
+            c.execute("""INSERT INTO user_profile 
+                         (gender, age, height, weight, target_weight, activity_level, exercise_type, 
+                          target_calories, target_carb, target_protein, target_fat, sleep_bed_hr, sleep_wake_hr,
+                          meal_count, first_meal_hr, last_meal_hr, carb_type, snack_type, snack_freq, snack_time, snack_amt, 
+                          water_unit, water_cnt, bev_type, bev_unit, bev_cnt) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", 
+                      (g_val, a_val, h_val, w_val, t_w_val, act_val, exc_val, t_cal, t_c, t_p, t_f, bed_hr, wake_hr, meal_cnt, f_hr, l_hr, carb_v, snack_v, snack_freq, snack_time, snack_amt, w_unit, w_cnt, b_type, b_unit, b_cnt))
+            conn.commit()
+            st.success("데이터가 기준점으로 완벽하게 저장되었습니다. 좌측 메뉴를 이용해 이동하세요!")
+            st.rerun()
+        except ValueError:
+            st.error("나이, 신장, 체중 등의 수치 항목은 반드시 숫자만 입력해주세요.")
