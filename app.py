@@ -167,7 +167,6 @@ def commit_and_sync(conn, table_names=None):
             df = pd.read_sql(f"SELECT * FROM {t}", conn)
             ws.clear()
             if not df.empty:
-                # 💡 핵심 수정: 파이썬의 빈칸(NaN, None 등) 기호를 엑셀이 좋아하는 깔끔한 빈칸("")으로 싹 청소합니다!
                 clean_df = df.fillna("").astype(str).replace(["nan", "NaN", "None", "<NA>"], "")
                 data = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
                 try: ws.update(data)
@@ -298,31 +297,6 @@ else:
         if abs(current_w - base_weight) >= 2.0:
             st.sidebar.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
             st.sidebar.error("🚨 **대사량 재설정 요망!**\n\n기준 체중 대비 2kg 이상의 변화가 감지되었습니다. 정체기 및 근손실 방지를 위해 [정밀 대사 재진단]을 수행해 주세요.")
-
-    st.sidebar.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
-    if st.sidebar.button("☁️ 수동 강제 백업 (Excel 전송)", use_container_width=True):
-        with st.spinner("엑셀과 통신 중..."):
-            client = get_gsheet_client()
-            if not client:
-                st.sidebar.error("❌ 통신 실패: 금고(Secrets)의 JSON 열쇠 형식이 잘못되었거나 없습니다.")
-            else:
-                try:
-                    sheet = client.open("my_diet_db")
-                    tables = ['user_profile', 'daily_habits', 'beverage_logs', 'exercise_logs', 'diet_logs', 'daily_weight']
-                    for t in tables:
-                        try: ws = sheet.worksheet(t)
-                        except: ws = sheet.add_worksheet(title=t, rows="100", cols="30")
-                        df = pd.read_sql(f"SELECT * FROM {t}", conn)
-                        ws.clear()
-                        if not df.empty:
-                            # 💡 핵심 수정 파트: 수동 백업 시에도 NaN을 말끔히 지워 에러 방지
-                            clean_df = df.fillna("").astype(str).replace(["nan", "NaN", "None", "<NA>"], "")
-                            data = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
-                            try: ws.update(data)
-                            except: ws.update('A1', data)
-                    st.sidebar.success("✅ 엑셀 전송 완료! PC에서 엑셀 화면을 확인해보세요.")
-                except Exception as e:
-                    st.sidebar.error(f"❌ 엑셀 접근 거부: 로봇 이메일 초대 누락 또는 파일명 불일치. 상세 에러: {e}")
 
 # ==========================================
 # 5. 페이지 렌더링
