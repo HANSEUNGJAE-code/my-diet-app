@@ -15,27 +15,21 @@ except:
     GEMINI_API_KEY = None
 
 # ==========================================
-# 1. 모바일 최적화 CSS (앱 UI 강제 숨김 포함)
+# 1. 모바일 최적화 CSS (광고 워터마크 영구 삭제 포함)
 # ==========================================
 st.set_page_config(page_title="브쌤's Diet 비서", layout="centered", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
-    /* 🚨 스트림릿 클라우드 기본 UI(개발자 메뉴, 빨간 종이배, 깃허브 아이콘) 완벽 숨기기 🚨 */
-    #MainMenu {visibility: hidden !important;}
-    header {visibility: hidden !important;}
-    footer {visibility: hidden !important;}
-    [data-testid="stHeader"] {display: none !important;}
-    [data-testid="stAppDeployButton"] {display: none !important;}
-    [data-testid="manage-app-button"] {display: none !important;}
-    .viewerBadge_container {display: none !important;}
-    .viewerBadge_link {display: none !important;}
+    /* 🚨 스트림릿 무료 버전 광고 워터마크(빨간 배, 비행기) 완벽 추적 파괴 🚨 */
+    [class^="viewerBadge_"] { display: none !important; }
+    div[data-testid="stToolbar"] { display: none !important; }
+    #MainMenu { visibility: hidden !important; }
+    header { visibility: hidden !important; }
+    footer { visibility: hidden !important; }
     
     /* iOS 강제 확대 방지용 16px 고정 */
     input, select, textarea { font-size: 16px !important; }
-    
-    /* 우측 상단 '...' 액션 요소 핀셋 제거 */
-    [data-testid="stHeaderActionElements"] { display: none !important; }
     
     /* 사이드바 메뉴 텍스트 크기 확대 및 볼드체 */
     [data-testid="stSidebar"] label p { 
@@ -201,7 +195,6 @@ def generate_master_feedback(p):
 # ==========================================
 # 4. 앱 강제 라우팅 및 좌측 사이드바 마크다운 메뉴
 # ==========================================
-# 💡 단 한 번만 출력되는 글로벌(전역) 타이틀
 st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
 
 p_df = pd.read_sql("SELECT * FROM user_profile ORDER BY id DESC LIMIT 1", conn)
