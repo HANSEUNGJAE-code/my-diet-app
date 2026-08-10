@@ -295,7 +295,6 @@ if menu == "📝 일일 기록 (메인)":
         # 버튼을 대시보드 바로 아래 중앙에 배치하여 직관성 극대화
         _, col_end, _ = st.columns([1, 2, 1])
         with col_end:
-            # st.button의 백그라운드 색상은 커스텀 CSS로 위에서 적용함 (#2C3E50)
             if st.button("🏁 식사 완료 및 공복 타이머 시작", use_container_width=True):
                 now_str = now.strftime("%H:%M")
                 c.execute(f"UPDATE diet_logs SET meal_end_time='{now_str}' WHERE meal_end_time IS NULL OR meal_end_time = ''")
@@ -338,12 +337,16 @@ if menu == "📝 일일 기록 (메인)":
         # 식사 중일 때와 아닐 때 폼 제목 변경을 통해 맥락 부여
         st.markdown(f"##### {'➕ 현재 식사에 메뉴 추가하기' if is_eating else '🍽️ 새로운 식사 시작 (메뉴 기록)'}")
         
+        # [수정사항] 변수를 안전하게 쿼리문에 전달하여 문법 오류 원천 방지
         meal_type_idx = 0
-        if is_eating: # 식사 중이면 이전 식사 타입을 그대로 유지
-            c.execute(f"SELECT meal_type FROM diet_logs WHERE id={lm_id}")
-            prev_type = c.fetchone()[0]
-            if prev_type in ["아침", "점심", "저녁", "간식", "야식"]:
-                meal_type_idx = ["아침", "점심", "저녁", "간식", "야식"].index(prev_type)
+        if is_eating and lm_id: # 식사 중이면 이전 식사 타입을 그대로 유지
+            try:
+                c.execute("SELECT meal_type FROM diet_logs WHERE id=?", (lm_id,))
+                prev_row = c.fetchone()
+                if prev_row and prev_row[0] in ["아침", "점심", "저녁", "간식", "야식"]:
+                    meal_type_idx = ["아침", "점심", "저녁", "간식", "야식"].index(prev_row[0])
+            except Exception as e:
+                pass
 
         meal_type = st.selectbox("식사 구분", ["아침", "점심", "저녁", "간식", "야식"], index=meal_type_idx)
 
@@ -377,7 +380,6 @@ if menu == "📝 일일 기록 (메인)":
                                 genai.configure(api_key=GEMINI_API_KEY)
                                 model = genai.GenerativeModel('gemini-3.6-flash')
                                 
-                                # [핵심] 완벽히 고도화된 Chain of Thought 프롬프트 (5 Whys 문제 해결)
                                 prompt = '''너는 수십 년 경력의 임상 영양학자이자 AI 데이터 분석가야.
                                 사진이나 제품 패키지를 보고 아래의 [필수 사고 과정] 1~7단계를 반드시 내재적으로 거친 후, 8단계의 JSON 결과만 출력해.
 
@@ -409,7 +411,6 @@ if menu == "📝 일일 기록 (메인)":
                                 else: st.error("데이터 인식 실패.")
                             except Exception as e: st.error(f"통신 에러: {e}")
 
-        # 복잡했던 입력폼을 깔끔한 Expander(토글) 안에 넣어 UI 심플화
         with st.expander("✍️ 수동 입력 및 추출된 영양성분 확인", expanded=True):
             with st.form("diet_tracking_form"):
                 c01, c02 = st.columns(2)
@@ -429,7 +430,6 @@ if menu == "📝 일일 기록 (메인)":
                 sat_fat_v = st.session_state.ai_sat_fat
                 trans_fat_v = st.session_state.ai_trans_fat
                 
-                # 저장 버튼은 무조건 DB에 '시작 시간'만 남기고 '종료 시간'은 비워둠으로써 자연스레 식사 상태로 전환시킴
                 if st.form_submit_button("현재 식단 저장"):
                     try:
                         cal = float(calories_v)
@@ -442,19 +442,16 @@ if menu == "📝 일일 기록 (메인)":
                             c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
                                       (today_str, meal_type, menu_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, now_str, "", q))
                             
-                            # 로컬 저장 후 클라우드 즉시 동기화
                             commit_and_sync(conn, ['diet_logs'])
                             
-                            # 상태 초기화
                             st.session_state.ai_menu = ""
                             st.session_state.ai_calories = 0
                             for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
                             
-                            st.rerun() # 새로고침 되면서 상단 대시보드가 '식사 중'으로 즉각 변환됨
+                            st.rerun() 
                         else: st.error("메뉴 이름을 입력해주세요.")
                     except ValueError: st.error("수치는 반드시 숫자만 입력해주세요.")
 
-    # (이하 습관, 운동, 체중 코드는 최적화 유지)
     with tabs[1]: 
         if 'habit_msg' in st.session_state:
             st.success(st.session_state.habit_msg)
