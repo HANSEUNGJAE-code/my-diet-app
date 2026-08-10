@@ -180,17 +180,12 @@ if 'db_synced' not in st.session_state:
         sync_from_sheets(conn)
         st.session_state.db_synced = True
 
-# ==============================================================================
-# ★ 긴급 처방: 구글 시트 동기화(덮어쓰기)가 끝난 '직후'에 스키마 강제 점검 ★
-# 구글 시트에서 과거 데이터를 덮어씌우며 칼럼이 증발하는 현상을 여기서 원천 차단합니다.
-# ==============================================================================
 c = conn.cursor()
 c.execute("PRAGMA table_info(diet_logs)")
 columns = [col[1] for col in c.fetchall()]
 if "meal_end_time" not in columns:
     c.execute("ALTER TABLE diet_logs ADD COLUMN meal_end_time TEXT")
     conn.commit()
-# ==============================================================================
 
 now = datetime.utcnow() + timedelta(hours=9)
 today_str = now.strftime("%Y-%m-%d")
@@ -326,7 +321,6 @@ if menu == "📝 일일 기록 (메인)":
     if last_meal and pd.notna(last_meal[1]):
         date, start_t, end_t = last_meal
         
-        # 아직 식사 종료가 안 된 경우 (식사 중)
         if not end_t or pd.isna(end_t) or end_t.strip() == "":
             st.markdown(f"""
             <div class='fasting-timer wait'>
@@ -335,7 +329,6 @@ if menu == "📝 일일 기록 (메인)":
             </div>
             """, unsafe_allow_html=True)
         else:
-            # 식사 종료 시각부터 공복 계산
             try:
                 last_dt = datetime.strptime(f"{date} {end_t}", "%Y-%m-%d %H:%M")
                 fasting_delta = now - last_dt
@@ -413,12 +406,14 @@ if menu == "📝 일일 기록 (메인)":
                 if st.button("🔍 AI 데이터 추출", type="primary"):
                     if not GEMINI_API_KEY: st.error("API 금고가 비어있습니다.")
                     else:
-                        with st.spinner("오차 범위 보정 및 미량 영양소 정밀 분석 중..."):
+                        with st.spinner("다이어트 보수적 기준(안전 마진)으로 분석 중..."):
                             try:
                                 genai.configure(api_key=GEMINI_API_KEY)
                                 model = genai.GenerativeModel('gemini-3.6-flash')
+                                # [수정됨] 논리적 오류를 해결한 지능형 보정 프롬프트
                                 prompt = '''이 사진이 '영양성분표'인지 '일반 음식'인지 판단해. 영양성분표면 숫자를 읽고, 음식이면 유추해.
-                                중요 요청 사항: 영양성분표의 법적 허용 오차(약 20%)나 일반 식당 조리 시 추가되는 숨은 지방, 당류를 감안하여 '오차 범위가 보정된(현실적으로 10~20% 상향 조정된) 실제 섭취 예상치'를 기준으로 계산해서 출력해. 칼로리 역시 탄수화물, 단백질, 지방 합산을 넘어선 현실적인 보정치로 도출할 것.
+                                중요 요청 사항: 영양성분표의 법적 허용 오차나 일반 조리 시 발생하는 변수를 감안하여 '실제 섭취하게 될 현실적인 예상치'를 도출해. 
+                                단, 모든 수치를 단순 상향하지 마. 다이어트에 보수적인 관점을 적용하여, 단백질과 식이섬유는 실제 들어간 양이 예상치보다 적을 수 있음을 감안해 약간 하향 조정한 수치로 산출하고, 총 칼로리, 탄수화물, 지방, 당류, 나트륨은 숨은 조미료나 식용유 등을 감안하여 표기/예상치보다 10~20% 높게 보정하여 지능적으로 계산할 것.
                                 추출 항목: "name"(음식명), "calories"(칼로리kcal), "carb"(탄수화물g), "protein"(단백질g), "fat"(지방g), "sugar"(당류g), "sat_fat"(포화지방g), "trans_fat"(트랜스지방g), "sodium"(나트륨mg), "fiber"(식이섬유g). 
                                 "quality" 항목에 "좋은 음식", "주의 음식", "위험 음식" 중 하나로 판정. 
                                 무조건 JSON 형식으로만 답해. 예시: {"name": "음식명", "calories": 450, "carb": 45, "protein": 25, "fat": 15, "sugar": 5, "sat_fat": 2, "trans_fat": 0, "sodium": 600, "fiber": 4, "quality": "좋은 음식"}'''
@@ -435,7 +430,7 @@ if menu == "📝 일일 기록 (메인)":
                                     for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']:
                                         st.session_state[f'ai_{k}'] = float(ai_data.get(k, 0))
                                     st.session_state.ai_quality = ai_data.get("quality", "좋은 음식")
-                                    st.success(f"✅ 인식 완료! (메뉴: {st.session_state.ai_menu} / 오차 범위 보정 적용됨)")
+                                    st.success(f"✅ 인식 완료! (보수적 안전 마진이 적용되었습니다.)")
                                 else: st.error("데이터 인식 실패.")
                             except Exception as e: st.error(f"통신 에러: {e}")
 
