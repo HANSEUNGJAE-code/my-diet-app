@@ -43,12 +43,52 @@ st.markdown("""
     
     .block-container { padding-top: 1.5rem !important; padding-bottom: 2rem !important; }
     .stTextInput input, .stSelectbox div { border-radius: 8px !important; font-weight: 600 !important; }
-    .stButton>button { border-radius: 8px !important; color: white !important; font-weight: 900 !important; height: 50px; width: 100%; font-size: 1.1rem !important; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .stButton>button:active { transform: scale(0.98); }
     [data-testid="stDecoration"] { display: none; }
     
+    /* =========================================
+       프리미엄 버튼 UI/UX 디자인
+       ========================================= */
+    [data-testid="baseButton-secondary"] {
+        background-color: #2C3E50 !important;
+        border: none !important;
+        border-radius: 10px !important;
+        color: white !important;
+        font-size: 1.1rem !important;
+        font-weight: 800 !important;
+        height: 52px !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+        transition: all 0.2s ease !important;
+    }
+    [data-testid="baseButton-secondary"]:hover {
+        background-color: #34495E !important;
+        transform: translateY(-1px);
+    }
+    [data-testid="baseButton-secondary"]:active {
+        transform: scale(0.98) !important;
+    }
+    
+    [data-testid="baseButton-primary"] {
+        background: linear-gradient(135deg, #FF6B6B, #C0392B) !important;
+        border: none !important;
+        border-radius: 12px !important;
+        color: white !important;
+        font-size: 1.25rem !important;
+        font-weight: 900 !important;
+        height: 65px !important;
+        box-shadow: 0 6px 15px rgba(192, 57, 43, 0.25) !important;
+        letter-spacing: 0.5px !important;
+        transition: all 0.2s ease !important;
+    }
+    [data-testid="baseButton-primary"]:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 20px rgba(192, 57, 43, 0.35) !important;
+    }
+    [data-testid="baseButton-primary"]:active {
+        transform: scale(0.98) !important;
+    }
+    
     /* 공복 및 식사 상태 대시보드 디자인 */
-    .status-dashboard { padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); color: white;}
+    .status-dashboard { padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); color: white;}
     .status-fasting { background: linear-gradient(135deg, #1ABC9C, #16A085); }
     .status-eating { background: linear-gradient(135deg, #E67E22, #D35400); }
     .status-wait { background: linear-gradient(135deg, #7F8C8D, #95A5A6); box-shadow: none; }
@@ -71,6 +111,8 @@ st.markdown("""
     .macro-diff { font-size: 0.85rem; font-weight: bold; margin-top: 5px; }
     .status-green { background-color: #EAFAF1; border: 1px solid #27AE60; }
     .status-red { background-color: #FDEDEC; border: 1px solid #E74C3C; }
+    
+    .micro-box { background-color:#FDFEFE; padding:10px; border-radius:8px; border:1px dashed #BDC3C7; text-align:center; font-size:0.9rem; color:#34495E; margin-bottom: 20px;}
     
     .diet-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     .diet-table th { background-color: #34495E; color: white; padding: 12px 5px; text-align: center; font-weight: 800; font-size: 0.9rem;}
@@ -187,7 +229,7 @@ date_display = f"{now.strftime('%y - %m - %d')} ( {wd_map[now.weekday()]} )"
 def safe_get(val, default_val): return val if pd.notna(val) else default_val
 
 # ==========================================
-# 3. 진단 리포트 생성 함수 (유지)
+# 3. 진단 리포트 생성 함수 
 # ==========================================
 def generate_master_feedback(p):
     h = float(safe_get(p.get('height'), 160.0))
@@ -246,6 +288,10 @@ def generate_master_feedback(p):
 # ==========================================
 # 4. 앱 강제 라우팅 및 좌측 사이드바 마크다운 메뉴
 # ==========================================
+if "action_toast" in st.session_state:
+    st.toast(st.session_state.action_toast)
+    del st.session_state.action_toast
+
 p_df = pd.read_sql("SELECT * FROM user_profile ORDER BY id DESC LIMIT 1", conn)
 is_new_user = p_df.empty
 
@@ -264,14 +310,14 @@ else:
 # ==========================================
 
 # ------------------------------------------
-# [메뉴 1] 일일 기록 (기본 화면) - 완벽한 상태 기반 UX 적용
+# [메뉴 1] 일일 기록 (기본 화면)
 # ------------------------------------------
 if menu == "📝 일일 기록 (메인)":
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='date-display'>{date_display}</div>", unsafe_allow_html=True)
     
-    # --- 전역 상태 확인 (가장 최근 식사의 meal_end_time 확인) ---
-    c.execute("SELECT id, date, meal_time, meal_end_time FROM diet_logs ORDER BY date DESC, id DESC LIMIT 1")
+    # [수정됨] 절대적 최신 행만 안전하게 가져오기 위해 정렬 기준을 ID로 고정
+    c.execute("SELECT id, date, meal_time, meal_end_time FROM diet_logs ORDER BY id DESC LIMIT 1")
     latest_meal = c.fetchone()
     
     is_eating = False
@@ -281,9 +327,8 @@ if menu == "📝 일일 기록 (메인)":
         if not lm_end or str(lm_end).strip() == "":
             is_eating = True
 
-    # --- 상단 메인 대시보드 (직관적 상태 표시) ---
+    # --- 상단 메인 대시보드 ---
     if is_eating:
-        # 식사 중 UI
         st.markdown(f"""
         <div class='status-dashboard status-eating'>
             <div class='status-title'>🍽️ 현재 식사 중입니다</div>
@@ -292,19 +337,18 @@ if menu == "📝 일일 기록 (메인)":
         </div>
         """, unsafe_allow_html=True)
         
-        # 버튼을 대시보드 바로 아래 중앙에 배치하여 직관성 극대화
         _, col_end, _ = st.columns([1, 2, 1])
         with col_end:
-            if st.button("🏁 식사 완료 및 공복 타이머 시작", use_container_width=True):
+            if st.button("🏁 식사 완료 (공복 타이머 가동)", type="primary", use_container_width=True):
                 now_str = now.strftime("%H:%M")
-                c.execute(f"UPDATE diet_logs SET meal_end_time='{now_str}' WHERE meal_end_time IS NULL OR meal_end_time = ''")
+                c.execute(f"UPDATE diet_logs SET meal_end_time='{now_str}' WHERE id={lm_id}")
                 commit_and_sync(conn, ['diet_logs', 'daily_habits', 'beverage_logs', 'exercise_logs', 'daily_weight'])
+                st.session_state.action_toast = "✅ 식사가 완벽하게 기록되었으며 클라우드 연동이 완료되었습니다."
                 st.rerun()
                 
-        st.markdown("<hr style='margin:25px 0;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
         
     else:
-        # 공복 중 UI
         if latest_meal and lm_end:
             try:
                 last_dt = datetime.strptime(f"{lm_date} {lm_end}", "%Y-%m-%d %H:%M")
@@ -334,12 +378,10 @@ if menu == "📝 일일 기록 (메인)":
     tabs = st.tabs(tab_list)
     
     with tabs[0]: 
-        # 식사 중일 때와 아닐 때 폼 제목 변경을 통해 맥락 부여
         st.markdown(f"##### {'➕ 현재 식사에 메뉴 추가하기' if is_eating else '🍽️ 새로운 식사 시작 (메뉴 기록)'}")
         
-        # [수정사항] 변수를 안전하게 쿼리문에 전달하여 문법 오류 원천 방지
         meal_type_idx = 0
-        if is_eating and lm_id: # 식사 중이면 이전 식사 타입을 그대로 유지
+        if is_eating and lm_id: 
             try:
                 c.execute("SELECT meal_type FROM diet_logs WHERE id=?", (lm_id,))
                 prev_row = c.fetchone()
@@ -350,7 +392,6 @@ if menu == "📝 일일 기록 (메인)":
 
         meal_type = st.selectbox("식사 구분", ["아침", "점심", "저녁", "간식", "야식"], index=meal_type_idx)
 
-        # 상태 및 AI 초기화
         if 'camera_on' not in st.session_state: st.session_state.camera_on = False
         if 'ai_menu' not in st.session_state:
             st.session_state.ai_menu = ""
@@ -361,18 +402,18 @@ if menu == "📝 일일 기록 (메인)":
         col_btn, _ = st.columns([1, 1])
         with col_btn:
             if not st.session_state.camera_on:
-                if st.button("📷 스마트 카메라 켜기", type="primary"):
+                if st.button("📷 스마트 카메라 켜기"):
                     st.session_state.camera_on = True
                     st.rerun()
             else:
-                if st.button("❌ 카메라 닫기", type="secondary"):
+                if st.button("❌ 카메라 닫기"):
                     st.session_state.camera_on = False
                     st.rerun()
                     
         if st.session_state.camera_on:
             uploaded_file = st.camera_input("알아서 인식합니다", label_visibility="collapsed")
             if uploaded_file is not None:
-                if st.button("🔍 AI 심층 영양소 분석", type="primary"):
+                if st.button("🔍 AI 심층 영양소 분석"):
                     if not GEMINI_API_KEY: st.error("API 금고가 비어있습니다.")
                     else:
                         with st.spinner("AI가 질감과 재료의 다각적 변수를 분석 중입니다..."):
@@ -435,21 +476,24 @@ if menu == "📝 일일 기록 (메인)":
                         cal = float(calories_v)
                         carb, protein, fat = float(carb_v), float(protein_v), float(fat_v)
                         sugar, sodium, fiber = float(sugar_v), float(sodium_v), float(fiber_v)
-                        if menu_name:
-                            q = st.session_state.ai_quality
-                            now_str = now.strftime("%H:%M")
-                            
-                            c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
-                                      (today_str, meal_type, menu_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, now_str, "", q))
-                            
-                            commit_and_sync(conn, ['diet_logs'])
-                            
-                            st.session_state.ai_menu = ""
-                            st.session_state.ai_calories = 0
-                            for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
-                            
-                            st.rerun() 
-                        else: st.error("메뉴 이름을 입력해주세요.")
+                        
+                        # [수정됨] 이름이 공백이어도 자동으로 기본값이 들어가 데이터베이스 저장이 거부되지 않음
+                        m_name = menu_name.strip() if menu_name.strip() else "직접 입력 식단"
+                        q = st.session_state.ai_quality
+                        now_str = now.strftime("%H:%M")
+                        
+                        c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
+                                  (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, now_str, "", q))
+                        
+                        conn.commit()
+                        commit_and_sync(conn, ['diet_logs'])
+                        
+                        st.session_state.ai_menu = ""
+                        st.session_state.ai_calories = 0
+                        for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
+                        
+                        st.session_state.action_toast = "✅ 메뉴가 저장되었습니다! 식사를 마치시면 상단의 [식사 완료] 버튼을 눌러주세요."
+                        st.rerun() 
                     except ValueError: st.error("수치는 반드시 숫자만 입력해주세요.")
 
     with tabs[1]: 
