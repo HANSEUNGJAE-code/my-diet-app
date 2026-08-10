@@ -125,14 +125,19 @@ def init_diet_db():
         protein REAL DEFAULT 0, fat REAL DEFAULT 0, sugar REAL DEFAULT 0, sat_fat REAL DEFAULT 0, trans_fat REAL DEFAULT 0, 
         sodium REAL DEFAULT 0, fiber REAL DEFAULT 0, meal_time TEXT, meal_end_time TEXT, quality TEXT
     )''')
-    try:
-        c.execute("ALTER TABLE diet_logs ADD COLUMN meal_end_time TEXT")
-    except:
-        pass
-        
     c.execute('''CREATE TABLE IF NOT EXISTS daily_weight (id INTEGER PRIMARY KEY, date TEXT, weight REAL)''')
     conn.commit()
     return conn
+
+conn = init_diet_db()
+c = conn.cursor()
+
+# [중요] 캐시를 무시하는 강제 스키마 검사 및 마이그레이션 로직 (에러 원인 해결)
+c.execute("PRAGMA table_info(diet_logs)")
+columns = [col[1] for col in c.fetchall()]
+if "meal_end_time" not in columns:
+    c.execute("ALTER TABLE diet_logs ADD COLUMN meal_end_time TEXT")
+    conn.commit()
 
 def sync_from_sheets(conn):
     client = get_gsheet_client()
@@ -177,9 +182,6 @@ def commit_and_sync(conn, table_names=None):
                 try: ws.update(data)
                 except: ws.update('A1', data)
         except: pass
-
-conn = init_diet_db()
-c = conn.cursor()
 
 if 'db_synced' not in st.session_state:
     with st.spinner("☁️ 클라우드 데이터베이스와 안전하게 동기화 중입니다..."):
@@ -374,12 +376,12 @@ if menu == "📝 일일 기록 (메인)":
         if 'camera_on' not in st.session_state: st.session_state.camera_on = False
         if 'ai_menu' not in st.session_state:
             st.session_state.ai_menu = ""
+            st.session_state.ai_calories = 0
             for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
             st.session_state.ai_quality = "좋은 음식"
             
         col_end, col_empty, col_btn = st.columns([3, 4, 3])
         
-        # [신규 추가] 식사 종료 버튼
         with col_end:
             if st.button("🏁 식사 종료", type="secondary", use_container_width=True):
                 if not latest_meal or (latest_meal and latest_meal[1]): 
@@ -387,7 +389,6 @@ if menu == "📝 일일 기록 (메인)":
                 else:
                     now_str = now.strftime("%H:%M")
                     c.execute(f"UPDATE diet_logs SET meal_end_time='{now_str}' WHERE id = (SELECT MAX(id) FROM diet_logs)")
-                    # 여기서 그동안 밀린 다른 기록들까지 한 방에 클라우드 동기화!
                     commit_and_sync(conn, ['diet_logs', 'daily_habits', 'beverage_logs', 'exercise_logs', 'daily_weight', 'user_profile'])
                     st.success(f"{now_str} 식사 종료! 공복 타이머가 시작됩니다.")
                     st.rerun()
@@ -408,11 +409,16 @@ if menu == "📝 일일 기록 (메인)":
                 if st.button("🔍 AI 데이터 추출", type="primary"):
                     if not GEMINI_API_KEY: st.error("API 금고가 비어있습니다.")
                     else:
-                        with st.spinner("미량 영양소 정밀 분석 중..."):
+                        with st.spinner("오차 범위 보정 및 미량 영양소 정밀 분석 중..."):
                             try:
                                 genai.configure(api_key=GEMINI_API_KEY)
                                 model = genai.GenerativeModel('gemini-3.6-flash')
-                                prompt = '''이 사진이 '영양성분표'인지 '일반 음식'인지 판단해. 영양성분표면 숫자를 읽고, 음식이면 유추해. 추출: "name"(음식명), "carb"(탄수화물g), "protein"(단백질g), "fat"(지방g), "sugar"(당류g), "sat_fat"(포화지방g), "trans_fat"(트랜스지방g), "sodium"(나트륨mg), "fiber"(식이섬유g). "quality" 항목에 "좋은 음식", "주의 음식", "위험 음식" 중 하나로 판정. 무조건 JSON으로 답해. {"name": "음식명", "carb": 10, "protein": 20, "fat": 5, "sugar": 3, "sat_fat": 1, "trans_fat": 0, "sodium": 120, "fiber": 3, "quality": "좋은 음식"}'''
+                                # 프롬프트 수정: 칼로리 포함 및 오차 범위(안전 마진) 보정 지시
+                                prompt = '''이 사진이 '영양성분표'인지 '일반 음식'인지 판단해. 영양성분표면 숫자를 읽고, 음식이면 유추해.
+                                중요 요청 사항: 영양성분표의 법적 허용 오차(약 20%)나 일반 식당 조리 시 추가되는 숨은 지방, 당류를 감안하여 '오차 범위가 보정된(현실적으로 10~20% 상향 조정된) 실제 섭취 예상치'를 기준으로 계산해서 출력해. 칼로리 역시 탄수화물, 단백질, 지방 합산을 넘어선 현실적인 보정치로 도출할 것.
+                                추출 항목: "name"(음식명), "calories"(칼로리kcal), "carb"(탄수화물g), "protein"(단백질g), "fat"(지방g), "sugar"(당류g), "sat_fat"(포화지방g), "trans_fat"(트랜스지방g), "sodium"(나트륨mg), "fiber"(식이섬유g). 
+                                "quality" 항목에 "좋은 음식", "주의 음식", "위험 음식" 중 하나로 판정. 
+                                무조건 JSON 형식으로만 답해. 예시: {"name": "음식명", "calories": 450, "carb": 45, "protein": 25, "fat": 15, "sugar": 5, "sat_fat": 2, "trans_fat": 0, "sodium": 600, "fiber": 4, "quality": "좋은 음식"}'''
                                 
                                 img = Image.open(uploaded_file)
                                 response = model.generate_content([prompt, img])
@@ -422,16 +428,20 @@ if menu == "📝 일일 기록 (메인)":
                                 if start_idx != -1 and end_idx != -1:
                                     ai_data = json.loads(result_text[start_idx:end_idx+1])
                                     st.session_state.ai_menu = ai_data.get("name", "")
+                                    st.session_state.ai_calories = float(ai_data.get("calories", 0))
                                     for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']:
                                         st.session_state[f'ai_{k}'] = float(ai_data.get(k, 0))
                                     st.session_state.ai_quality = ai_data.get("quality", "좋은 음식")
-                                    st.success(f"✅ 인식 완료! (메뉴: {st.session_state.ai_menu})")
+                                    st.success(f"✅ 인식 완료! (메뉴: {st.session_state.ai_menu} / 오차 범위 보정 적용됨)")
                                 else: st.error("데이터 인식 실패.")
                             except Exception as e: st.error(f"통신 에러: {e}")
 
         with st.form("diet_tracking_form"):
-            st.markdown("##### 📝 매크로 및 미량 영양소 기록")
-            menu_name = st.text_input("메뉴 이름", st.session_state.ai_menu)
+            st.markdown("##### 📝 매크로 및 미량 영양소 기록 (보정값 적용)")
+            c01, c02 = st.columns(2)
+            with c01: menu_name = st.text_input("메뉴 이름", st.session_state.ai_menu)
+            with c02: calories_v = st.text_input("총 칼로리(kcal)", value=str(st.session_state.ai_calories))
+            
             c1, c2, c3 = st.columns(3)
             with c1: carb_v = st.text_input("탄수화물(g)", value=str(st.session_state.ai_carb))
             with c2: protein_v = st.text_input("단백질(g)", value=str(st.session_state.ai_protein))
@@ -447,21 +457,21 @@ if menu == "📝 일일 기록 (메인)":
             
             if st.form_submit_button("데이터베이스 저장"):
                 try:
+                    cal = float(calories_v)
                     carb, protein, fat = float(carb_v), float(protein_v), float(fat_v)
                     sugar, sodium, fiber = float(sugar_v), float(sodium_v), float(fiber_v)
-                    cal = (carb * 4) + (protein * 4) + (fat * 9)
                     if menu_name:
                         q = st.session_state.ai_quality
                         now_str = now.strftime("%H:%M")
-                        # 쿼리에 meal_end_time 추가, 빈 값으로 INSERT
+                        
                         c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
                                   (today_str, meal_type, menu_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, now_str, "", q))
                         
-                        # 밀린 기록 한방에 동기화
                         commit_and_sync(conn, ['diet_logs', 'daily_habits', 'beverage_logs', 'exercise_logs', 'daily_weight', 'user_profile']) 
                         st.success(f"식사 시작! ({now_str}) 식사를 마치시면 상단의 [🏁 식사 종료] 버튼을 눌러주세요.")
                         
                         st.session_state.ai_menu = ""
+                        st.session_state.ai_calories = 0
                         for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
                     else: st.error("메뉴 이름을 입력해주세요.")
                 except ValueError: st.error("영양성분 수치는 반드시 숫자만 입력해주세요.")
@@ -485,14 +495,14 @@ if menu == "📝 일일 기록 (메인)":
             if st.button("💧 작은 컵 (+1)", use_container_width=True):
                 if w_df.empty: c.execute(f"INSERT INTO daily_habits (date, water_unit, water_amt) VALUES ('{today_str}', '잔', 1.0)")
                 else: c.execute(f"UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 1.0 WHERE date='{today_str}'")
-                conn.commit() # 최적화: 로컬만 갱신
+                conn.commit() 
                 st.session_state.habit_msg = "💧 생수 1단위가 로컬에 추가되었습니다. (동기화 대기중)"
                 st.rerun()
         with col_w2:
             if st.button("💧 큰 컵 (+2)", use_container_width=True):
                 if w_df.empty: c.execute(f"INSERT INTO daily_habits (date, water_unit, water_amt) VALUES ('{today_str}', '잔', 2.0)")
                 else: c.execute(f"UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 2.0 WHERE date='{today_str}'")
-                conn.commit() # 최적화: 로컬만 갱신
+                conn.commit() 
                 st.session_state.habit_msg = "💧 생수 2단위가 로컬에 추가되었습니다. (동기화 대기중)"
                 st.rerun()
                 
@@ -510,14 +520,14 @@ if menu == "📝 일일 기록 (메인)":
             if st.button("☕ 작은 캔 (+1)", use_container_width=True):
                 if b_df.empty: c.execute(f"INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES ('{today_str}', '{selected_b_name}', 1.0, '작은 캔')")
                 else: c.execute(f"UPDATE beverage_logs SET amount = amount + 1.0 WHERE id={b_df.iloc[0]['id']}")
-                conn.commit() # 최적화: 로컬만 갱신
+                conn.commit() 
                 st.session_state.habit_msg = f"☕ [{selected_b_name}] 1단위가 로컬에 추가되었습니다. (동기화 대기중)"
                 st.rerun()
         with col_b2:
             if st.button("☕ 큰 캔 (+2)", use_container_width=True):
                 if b_df.empty: c.execute(f"INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES ('{today_str}', '{selected_b_name}', 2.0, '큰 캔')")
                 else: c.execute(f"UPDATE beverage_logs SET amount = amount + 2.0 WHERE id={b_df.iloc[0]['id']}")
-                conn.commit() # 최적화: 로컬만 갱신
+                conn.commit() 
                 st.session_state.habit_msg = f"☕ [{selected_b_name}] 2단위가 로컬에 추가되었습니다. (동기화 대기중)"
                 st.rerun()
 
@@ -555,7 +565,7 @@ if menu == "📝 일일 기록 (메인)":
                     elif b_man_amt == 0 and not b_df.empty:
                         c.execute(f"DELETE FROM beverage_logs WHERE id={b_df.iloc[0]['id']}")
                         
-                    conn.commit() # 최적화: 로컬만 갱신
+                    conn.commit() 
                     st.success("로컬 데이터베이스에 완벽히 업데이트되었습니다! (클라우드는 식사 종료 시 자동 연동됩니다.)")
                 except ValueError:
                     st.error("섭취량은 숫자만 입력해야 합니다.")
@@ -605,7 +615,7 @@ if menu == "📝 일일 기록 (메인)":
                     burned_cal = int((met * 3.5 * user_w * ex_min) / 200)
                     
                     c.execute("INSERT INTO exercise_logs (date, ex_name, duration, calories_burned) VALUES (?, ?, ?, ?)", (today_str, st.session_state.active_ex_name.split(' (')[0], ex_min, burned_cal))
-                    conn.commit() # 최적화: 로컬만 갱신
+                    conn.commit() 
                     st.session_state.ex_mins = 0
                     st.success(f"🔥 총 {burned_cal}kcal 소모 기록 완료! (클라우드는 식사 종료 시 자동 연동됩니다.)")
                 except ValueError: st.error("숫자만 입력해주세요.")
@@ -628,7 +638,7 @@ if menu == "📝 일일 기록 (메인)":
                         
                     if not is_new_user:
                         c.execute(f"UPDATE user_profile SET weight = {today_w} WHERE id = {p['id']}")
-                    conn.commit() # 최적화: 로컬만 갱신
+                    conn.commit() 
                     st.success("로컬에 안전하게 저장되었습니다. (클라우드는 식사 종료 시 자동 연동됩니다.)")
                 except ValueError: st.error("숫자만 입력해주세요.")
 
@@ -641,7 +651,7 @@ if menu == "📝 일일 기록 (메인)":
                     try:
                         valid_date = datetime.strptime(last_p_date.strip(), "%Y-%m-%d")
                         c.execute(f"UPDATE user_profile SET last_period_date = '{last_p_date}' WHERE id = {p['id']}")
-                        conn.commit() # 최적화: 로컬만 갱신
+                        conn.commit() 
                         st.success("저장 완료. 달력 조회에서 피드백을 확인하세요.")
                     except ValueError: st.error("날짜 형식을 맞춰주세요.")
 
@@ -727,7 +737,6 @@ elif menu == "📅 달력 조회":
             elif "주의" in q: badge = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의 음식</span>"
             else: badge = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험 음식</span>"
             
-            # 종료 시각 표시 기능 추가
             end_t = f"~ {row['meal_end_time']}" if pd.notna(row['meal_end_time']) and row['meal_end_time'] else ""
             table_html += f"<tr><td><b>{row['meal_time']}</b><br><span style='font-size:0.75rem; color:#7F8C8D;'>{end_t}</span></td><td><b style='color:#2C3E50;'>{row['menu_name']}</b></td><td>{badge}</td></tr>"
     table_html += "</table>"
