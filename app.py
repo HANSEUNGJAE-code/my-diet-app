@@ -181,7 +181,10 @@ def sync_from_sheets(conn):
             records = ws.get_all_records()
             if records:
                 df = pd.DataFrame(records)
-                df.to_sql(t, conn, if_exists='replace', index=False)
+                c = conn.cursor()
+                # [오류 해결 핵심 1] 기존 데이터를 비운 후 append 방식을 사용하여 스키마(Auto-Increment ID 등) 파괴 원천 차단
+                c.execute(f"DELETE FROM {t}")
+                df.to_sql(t, conn, if_exists='append', index=False)
                 success = True
         except: pass
     return success
@@ -316,15 +319,15 @@ if menu == "📝 일일 기록 (메인)":
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='date-display'>{date_display}</div>", unsafe_allow_html=True)
     
-    # [수정됨] 절대적 최신 행만 안전하게 가져오기 위해 정렬 기준을 ID로 고정
-    c.execute("SELECT id, date, meal_time, meal_end_time FROM diet_logs ORDER BY id DESC LIMIT 1")
+    # [오류 해결 핵심 2] id 컬럼에 결측치가 섞여도 시스템 고유 rowid와 시간의 역순 조합으로 최신값을 완벽 보장
+    c.execute("SELECT rowid, date, meal_time, meal_end_time FROM diet_logs ORDER BY date DESC, meal_time DESC, rowid DESC LIMIT 1")
     latest_meal = c.fetchone()
     
     is_eating = False
     lm_id, lm_date, lm_start, lm_end = None, None, None, None
     if latest_meal:
         lm_id, lm_date, lm_start, lm_end = latest_meal
-        if not lm_end or str(lm_end).strip() == "":
+        if not lm_end or str(lm_end).strip() == "" or str(lm_end).strip().lower() == "nan":
             is_eating = True
 
     # --- 상단 메인 대시보드 ---
@@ -341,7 +344,7 @@ if menu == "📝 일일 기록 (메인)":
         with col_end:
             if st.button("🏁 식사 완료 (공복 타이머 가동)", type="primary", use_container_width=True):
                 now_str = now.strftime("%H:%M")
-                c.execute(f"UPDATE diet_logs SET meal_end_time='{now_str}' WHERE id={lm_id}")
+                c.execute("UPDATE diet_logs SET meal_end_time=? WHERE rowid=?", (now_str, lm_id))
                 commit_and_sync(conn, ['diet_logs', 'daily_habits', 'beverage_logs', 'exercise_logs', 'daily_weight'])
                 st.session_state.action_toast = "✅ 식사가 완벽하게 기록되었으며 클라우드 연동이 완료되었습니다."
                 st.rerun()
@@ -383,7 +386,7 @@ if menu == "📝 일일 기록 (메인)":
         meal_type_idx = 0
         if is_eating and lm_id: 
             try:
-                c.execute("SELECT meal_type FROM diet_logs WHERE id=?", (lm_id,))
+                c.execute("SELECT meal_type FROM diet_logs WHERE rowid=?", (lm_id,))
                 prev_row = c.fetchone()
                 if prev_row and prev_row[0] in ["아침", "점심", "저녁", "간식", "야식"]:
                     meal_type_idx = ["아침", "점심", "저녁", "간식", "야식"].index(prev_row[0])
@@ -430,7 +433,7 @@ if menu == "📝 일일 기록 (메인)":
                                 3. 변수들의 연결: 1단계의 주원료 카테고리와 2단계의 숨은 요소가 결합될 때 발생하는 매크로(탄/단/지) 파이를 연결하라.
                                 4. 통합화: 위 과정을 통해 1차 총 칼로리 및 기본 영양소 구성비를 구성하라.
                                 5. 오차 발생 변수 특정: 이 식품군에서 영양소 오차를 가장 크게 유발할 핵심 변수 1~2개(예: 유지방 함량 유무, 튀김옷 두께, 설탕 시럽 양)를 찾아내라.
-                                6. 변수값 중앙값(Median) 부여: 5단계 변수의 최소치와 최대치를 가늠하고, 그 절대적인 중간값(Median)을 실제 적용 값으로 확정하라. (단순히 수치를 10% 일괄 상향하는 오류를 절대 범하지 말 것. 단백질과 식이섬유는 보수적으로 낮게 잡고, 지방과 당류는 카테고리에 맞춰 정밀하게 반영할 것).
+                                6. 변수값 중앙값(Median) 부여: 5단계 변수의 최소치와 최대치를 가늠하고, 그 절대적인 중간값(Median)을 실제 적용 값으로 확정하라. (단순히 수치를 일괄 상향하는 오류를 절대 범하지 말 것. 단백질과 식이섬유는 보수적으로 낮게 잡고, 지방과 당류는 카테고리에 맞춰 정밀하게 반영할 것).
                                 7. 재통합화: 6단계의 중간값을 토대로 칼로리와 탄/단/지/당류 등의 최종 수치를 현실적이고 논리적으로 밸런스를 맞춰 재조정하라.
                                 8. 결과값 표시: 도출된 최종 수치를 바탕으로 마크다운 기호(```json) 없이 오직 아래 형식의 순수 JSON 데이터만 출력하라.
 
@@ -477,7 +480,6 @@ if menu == "📝 일일 기록 (메인)":
                         carb, protein, fat = float(carb_v), float(protein_v), float(fat_v)
                         sugar, sodium, fiber = float(sugar_v), float(sodium_v), float(fiber_v)
                         
-                        # [수정됨] 이름이 공백이어도 자동으로 기본값이 들어가 데이터베이스 저장이 거부되지 않음
                         m_name = menu_name.strip() if menu_name.strip() else "직접 입력 식단"
                         q = st.session_state.ai_quality
                         now_str = now.strftime("%H:%M")
