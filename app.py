@@ -341,7 +341,7 @@ if menu == "📝 일일 기록 (메인)":
     
     with tabs[0]: 
         c1, c2 = st.columns(2)
-        with c1: curr_str = st.text_input("식사 시간 (예: 14:30)", value=now.strftime("%H:%M"))
+        with c1: curr_str = st.text_input("식사 종료 시각 (예: 14:30)", value=now.strftime("%H:%M"))
         with c2: meal_type = st.selectbox("식사 구분", ["아침", "점심", "저녁", "간식", "야식"])
 
         st.markdown("#### 📸 식단 스캐너")
@@ -371,7 +371,7 @@ if menu == "📝 일일 기록 (메인)":
                         with st.spinner("미량 영양소 정밀 분석 중..."):
                             try:
                                 genai.configure(api_key=GEMINI_API_KEY)
-                                model = genai.GenerativeModel('gemini-3.5-flash')
+                                model = genai.GenerativeModel('gemini-3.6-flash')
                                 prompt = '''이 사진이 '영양성분표'인지 '일반 음식'인지 판단해. 영양성분표면 숫자를 읽고, 음식이면 유추해. 추출: "name"(음식명), "carb"(탄수화물g), "protein"(단백질g), "fat"(지방g), "sugar"(당류g), "sat_fat"(포화지방g), "trans_fat"(트랜스지방g), "sodium"(나트륨mg), "fiber"(식이섬유g). "quality" 항목에 "좋은 음식", "주의 음식", "위험 음식" 중 하나로 판정. 무조건 JSON으로 답해. {"name": "음식명", "carb": 10, "protein": 20, "fat": 5, "sugar": 3, "sat_fat": 1, "trans_fat": 0, "sodium": 120, "fiber": 3, "quality": "좋은 음식"}'''
                                 
                                 img = Image.open(uploaded_file)
