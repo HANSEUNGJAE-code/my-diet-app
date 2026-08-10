@@ -130,14 +130,6 @@ def init_diet_db():
     return conn
 
 conn = init_diet_db()
-c = conn.cursor()
-
-# [중요] 캐시를 무시하는 강제 스키마 검사 및 마이그레이션 로직 (에러 원인 해결)
-c.execute("PRAGMA table_info(diet_logs)")
-columns = [col[1] for col in c.fetchall()]
-if "meal_end_time" not in columns:
-    c.execute("ALTER TABLE diet_logs ADD COLUMN meal_end_time TEXT")
-    conn.commit()
 
 def sync_from_sheets(conn):
     client = get_gsheet_client()
@@ -187,6 +179,18 @@ if 'db_synced' not in st.session_state:
     with st.spinner("☁️ 클라우드 데이터베이스와 안전하게 동기화 중입니다..."):
         sync_from_sheets(conn)
         st.session_state.db_synced = True
+
+# ==============================================================================
+# ★ 긴급 처방: 구글 시트 동기화(덮어쓰기)가 끝난 '직후'에 스키마 강제 점검 ★
+# 구글 시트에서 과거 데이터를 덮어씌우며 칼럼이 증발하는 현상을 여기서 원천 차단합니다.
+# ==============================================================================
+c = conn.cursor()
+c.execute("PRAGMA table_info(diet_logs)")
+columns = [col[1] for col in c.fetchall()]
+if "meal_end_time" not in columns:
+    c.execute("ALTER TABLE diet_logs ADD COLUMN meal_end_time TEXT")
+    conn.commit()
+# ==============================================================================
 
 now = datetime.utcnow() + timedelta(hours=9)
 today_str = now.strftime("%Y-%m-%d")
@@ -413,7 +417,6 @@ if menu == "📝 일일 기록 (메인)":
                             try:
                                 genai.configure(api_key=GEMINI_API_KEY)
                                 model = genai.GenerativeModel('gemini-3.6-flash')
-                                # 프롬프트 수정: 칼로리 포함 및 오차 범위(안전 마진) 보정 지시
                                 prompt = '''이 사진이 '영양성분표'인지 '일반 음식'인지 판단해. 영양성분표면 숫자를 읽고, 음식이면 유추해.
                                 중요 요청 사항: 영양성분표의 법적 허용 오차(약 20%)나 일반 식당 조리 시 추가되는 숨은 지방, 당류를 감안하여 '오차 범위가 보정된(현실적으로 10~20% 상향 조정된) 실제 섭취 예상치'를 기준으로 계산해서 출력해. 칼로리 역시 탄수화물, 단백질, 지방 합산을 넘어선 현실적인 보정치로 도출할 것.
                                 추출 항목: "name"(음식명), "calories"(칼로리kcal), "carb"(탄수화물g), "protein"(단백질g), "fat"(지방g), "sugar"(당류g), "sat_fat"(포화지방g), "trans_fat"(트랜스지방g), "sodium"(나트륨mg), "fiber"(식이섬유g). 
