@@ -685,7 +685,8 @@ elif menu == "📅 달력 조회":
     t_f = t_f_base
     
     try:
-        logs = pd.read_sql(f"SELECT * FROM diet_logs WHERE date='{view_date_str}'", conn)
+        # 👉 SELECT rowid as db_rowid, * 로 변경하여 숨겨진 절대 고유번호를 강제로 가져옵니다.
+        logs = pd.read_sql(f"SELECT rowid as db_rowid, * FROM diet_logs WHERE date='{view_date_str}'", conn)
         e_cal = logs['calories'].sum() if not logs.empty and 'calories' in logs.columns else 0
         e_c = logs['carb'].sum() if not logs.empty and 'carb' in logs.columns else 0
         e_p = logs['protein'].sum() if not logs.empty and 'protein' in logs.columns else 0
@@ -715,7 +716,6 @@ elif menu == "📅 달력 조회":
     
     st.markdown(f"<div class='micro-box'>🔬 <b>미량 영양소 추적:</b> 나트륨 <b>{int(e_sodium)}mg</b> (권장 2000mg 이하) &nbsp; | &nbsp; 식이섬유 <b>{int(e_fiber)}g</b> (권장 25g 이상)</div>", unsafe_allow_html=True)
 
-    # [수정됨] Null 값을 완벽히 필터링하도록 쿼리 정교화
     c.execute(f"SELECT id, menu_name, meal_time FROM diet_logs WHERE date='{view_date_str}' AND (meal_end_time IS NULL OR meal_end_time = '' OR LOWER(meal_end_time) IN ('nan', 'none', 'null')) ORDER BY id DESC LIMIT 1")
     active_meal = c.fetchone()
     
@@ -733,7 +733,6 @@ elif menu == "📅 달력 조회":
             elif "주의" in q: badge = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의 음식</span>"
             else: badge = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험 음식</span>"
             
-            # 테이블 안에서도 Nan, None 완벽 처리
             if pd.notna(row['meal_end_time']) and str(row['meal_end_time']).strip() != "" and str(row['meal_end_time']).strip().lower() not in ["nan", "none", "null"]:
                 end_t = f"~ {row['meal_end_time']}"
             else:
@@ -743,7 +742,6 @@ elif menu == "📅 달력 조회":
     table_html += "</table>"
     st.markdown(table_html, unsafe_allow_html=True)
     
-    # [변경됨] 식단 삭제하기 바로 위 우측에 식사 종료 버튼 및 성공 메시지 고정 배치
     if active_meal:
         col_blank, col_end_btn = st.columns([7, 3])
         with col_end_btn:
@@ -755,7 +753,6 @@ elif menu == "📅 달력 조회":
                 st.session_state.meal_end_success = True
                 st.rerun()
 
-    # 버튼이 눌려 화면이 새로고침 되면, 버튼은 사라지고 바로 그 자리에 메시지가 출력됨
     if st.session_state.get("meal_end_success"):
         st.success("✅ 식사가 종료 되었습니다. 공복 타이머가 가동됩니다.")
         st.session_state.meal_end_success = False
@@ -763,10 +760,12 @@ elif menu == "📅 달력 조회":
     if not logs.empty:
         with st.expander("🛠️ 식단 삭제하기"):
             with st.form("delete_diet_form"):
-                del_options = {f"[{row['meal_time']}] {row['menu_name']} (고유번호: {row['id']})": row['id'] for idx, row in logs.iterrows()}
+                # 👉 빈 칸이 될 수 있는 id 대신 절대 고유번호인 db_rowid 사용
+                del_options = {f"[{row['meal_time']}] {row['menu_name']} (고유번호: {row['db_rowid']})": row['db_rowid'] for idx, row in logs.iterrows()}
                 selected_del_key = st.selectbox("삭제할 식단 선택", options=list(del_options.keys()))
                 if st.form_submit_button("영구 삭제"):
-                    c.execute("DELETE FROM diet_logs WHERE id = ?", (del_options[selected_del_key],))
+                    # 👉 id가 아닌 rowid를 기준으로 삭제
+                    c.execute("DELETE FROM diet_logs WHERE rowid = ?", (del_options[selected_del_key],))
                     commit_and_sync(conn, ['diet_logs'])
                     st.rerun()
 
@@ -822,7 +821,7 @@ elif menu == "📅 달력 조회":
             habit_table += f"<tr><td><b>수분</b></td><td>{w_badge}</td><td style='text-align:left; font-size:0.85rem;'>{w_msg}</td></tr>"
 
     for idx, b_row in bev_df.iterrows():
-        b_name, b_amt, b_un = b_row['bev_name'], b_row['amount'], b_row['unit']
+        b_name, b_amt, b_un = b_row['amount'], b_row['amount'], b_row['unit']
         if b_name in ["아메리카노 / 에스프레소", "차류 (녹차, 홍차, 콤부차 등)", "제로 칼로리 음료 (제로콜라 등)"]:
             b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 당류가 없어 안전합니다."
         elif b_name in ["단백질 보충 액상", "일반 우유 / 무가당 두유"]:
