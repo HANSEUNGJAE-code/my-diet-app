@@ -379,9 +379,8 @@ if menu == "📝 일일 기록 (메인)":
                             try:
                                 genai.configure(api_key=GEMINI_API_KEY)
                                 
-                                # 💡 [3.6 Flash 전용 최적화] 무시되는 온도 제어 삭제 및 사고 수준(Thinking Level) 극대화
+                                # 💡 버전 오류가 없는 구글 범용 호환 옵션 세팅
                                 generation_config = {
-                                    "thinking_level": "HIGH",
                                     "response_mime_type": "application/json"
                                 }
                                 
