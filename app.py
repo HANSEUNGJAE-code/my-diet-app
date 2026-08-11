@@ -439,31 +439,26 @@ if menu == "📝 일일 기록 (메인)":
                         sugar, sodium, fiber = float(sugar_v), float(sodium_v), float(fiber_v)
                         
                         m_name = menu_name.strip() if menu_name.strip() else "직접 입력 식단"
-q = st.session_state.ai_quality
-
-# 👉 중복 방어 로직 시작
-c.execute('SELECT id FROM diet_logs WHERE date=? AND meal_time=? AND menu_name=?', (today_str, user_start_time.strip(), m_name))
-if c.fetchone():
-    st.error("⚠️ 방금 동일한 시간과 메뉴로 기록된 데이터가 있습니다. (중복 클릭 방지)")
-else:
-    # 기존과 동일하게 INSERT 실행
-    c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
-              (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, user_start_time.strip(), "", q))
-    
-    conn.commit()
-    commit_and_sync(conn, ['diet_logs'])
-    # ... (아래 세션 초기화 코드는 그대로 유지)
+                        q = st.session_state.ai_quality
                         
-                        conn.commit()
-                        commit_and_sync(conn, ['diet_logs'])
-                        
-                        st.session_state.ai_menu = ""
-                        st.session_state.ai_calories = 0
-                        for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
-                        
-                        st.session_state.meal_start_success = True
-                        st.rerun() 
-                    except ValueError: st.error("수치는 반드시 숫자만 입력해주세요.")
+                        c.execute('SELECT id FROM diet_logs WHERE date=? AND meal_time=? AND menu_name=?', (today_str, user_start_time.strip(), m_name))
+                        if c.fetchone():
+                            st.error("⚠️ 방금 동일한 시간과 메뉴로 기록된 데이터가 있습니다. (중복 클릭 방지)")
+                        else:
+                            c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
+                                      (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, user_start_time.strip(), "", q))
+                            
+                            conn.commit()
+                            commit_and_sync(conn, ['diet_logs'])
+                            
+                            st.session_state.ai_menu = ""
+                            st.session_state.ai_calories = 0
+                            for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
+                            
+                            st.session_state.meal_start_success = True
+                            st.rerun() 
+                    except ValueError: 
+                        st.error("수치는 반드시 숫자만 입력해주세요.")
             
             if st.session_state.get("meal_start_success"):
                 st.success("✅ 저장이 완료되었습니다! 편안한 식사 후 [📅 달력 조회] 탭에서 '식사 종료' 버튼을 눌러주세요.")
@@ -767,14 +762,8 @@ elif menu == "📅 달력 조회":
     
     if not logs.empty:
         with st.expander("🛠️ 식단 삭제하기"):
-    with st.form("delete_diet_form"):
-        # 해결: 화면에 고유 ID를 함께 표시하여 중복 메뉴라도 개별적으로 선택 및 삭제 가능하게 변경
-        del_options = {f"[{row['meal_time']}] {row['menu_name']} (고유번호: {row['id']})": row['id'] for idx, row in logs.iterrows()}
-        selected_del_key = st.selectbox("삭제할 식단 선택", options=list(del_options.keys()))
-        if st.form_submit_button("영구 삭제"):
-            c.execute("DELETE FROM diet_logs WHERE id = ?", (del_options[selected_del_key],))
-            commit_and_sync(conn, ['diet_logs'])
-            st.rerun()
+            with st.form("delete_diet_form"):
+                del_options = {f"[{row['meal_time']}] {row['menu_name']} (고유번호: {row['id']})": row['id'] for idx, row in logs.iterrows()}
                 selected_del_key = st.selectbox("삭제할 식단 선택", options=list(del_options.keys()))
                 if st.form_submit_button("영구 삭제"):
                     c.execute("DELETE FROM diet_logs WHERE id = ?", (del_options[selected_del_key],))
