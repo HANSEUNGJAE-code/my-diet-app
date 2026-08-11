@@ -45,9 +45,7 @@ st.markdown("""
     .stTextInput input, .stSelectbox div { border-radius: 8px !important; font-weight: 600 !important; }
     [data-testid="stDecoration"] { display: none; }
     
-    /* =========================================
-       프리미엄 버튼 UI/UX 디자인
-       ========================================= */
+    /* 서브 버튼 */
     [data-testid="baseButton-secondary"] {
         background-color: #2C3E50 !important;
         border: none !important;
@@ -67,6 +65,7 @@ st.markdown("""
         transform: scale(0.98) !important;
     }
     
+    /* 메인 버튼 */
     [data-testid="baseButton-primary"] {
         background: linear-gradient(135deg, #FF6B6B, #C0392B) !important;
         border: none !important;
@@ -74,7 +73,7 @@ st.markdown("""
         color: white !important;
         font-size: 1.25rem !important;
         font-weight: 900 !important;
-        height: 65px !important;
+        height: 60px !important;
         box-shadow: 0 6px 15px rgba(192, 57, 43, 0.25) !important;
         letter-spacing: 0.5px !important;
         transition: all 0.2s ease !important;
@@ -87,16 +86,14 @@ st.markdown("""
         transform: scale(0.98) !important;
     }
     
-    /* 공복 및 식사 상태 대시보드 디자인 */
-    .status-dashboard { padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); color: white;}
+    /* 대시보드 디자인 */
+    .status-dashboard { padding: 22px; border-radius: 12px; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); color: white;}
     .status-fasting { background: linear-gradient(135deg, #1ABC9C, #16A085); }
-    .status-eating { background: linear-gradient(135deg, #E67E22, #D35400); }
     .status-wait { background: linear-gradient(135deg, #7F8C8D, #95A5A6); box-shadow: none; }
     .status-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 8px; opacity: 0.9;}
     .status-time { font-size: 2.2rem; font-weight: 900; letter-spacing: 1px; margin-bottom: 5px;}
     .status-msg { font-size: 1rem; font-weight: bold; background: rgba(0,0,0,0.2); border-radius: 20px; padding: 6px 15px; display: inline-block; margin-top: 5px;}
     
-    /* 카메라 및 리포트 박스 */
     [data-testid="stCameraInput"] { width: 100% !important; padding: 0 !important; margin: 0 !important; }
     [data-testid="stCameraInput"] video, [data-testid="stCameraInput"] img { width: 100% !important; max-width: 100% !important; object-fit: cover !important; border-radius: 12px; }
     
@@ -182,7 +179,6 @@ def sync_from_sheets(conn):
             if records:
                 df = pd.DataFrame(records)
                 c = conn.cursor()
-                # [오류 해결 핵심 1] 기존 데이터를 비운 후 append 방식을 사용하여 스키마(Auto-Increment ID 등) 파괴 원천 차단
                 c.execute(f"DELETE FROM {t}")
                 df.to_sql(t, conn, if_exists='append', index=False)
                 success = True
@@ -313,67 +309,41 @@ else:
 # ==========================================
 
 # ------------------------------------------
-# [메뉴 1] 일일 기록 (기본 화면)
+# [메뉴 1] 일일 기록 (기본 화면) - 수기 입력 시간 방식 및 UI 최적화 적용
 # ------------------------------------------
 if menu == "📝 일일 기록 (메인)":
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='date-display'>{date_display}</div>", unsafe_allow_html=True)
     
-    # [오류 해결 핵심 2] id 컬럼에 결측치가 섞여도 시스템 고유 rowid와 시간의 역순 조합으로 최신값을 완벽 보장
-    c.execute("SELECT rowid, date, meal_time, meal_end_time FROM diet_logs ORDER BY date DESC, meal_time DESC, rowid DESC LIMIT 1")
+    # [변경됨] 오류를 유발하던 상태 전환 머신 제거, 가장 최근 식사의 '종료 시각'을 기준으로 단순 타이머 계산
+    c.execute("SELECT date, meal_end_time FROM diet_logs ORDER BY date DESC, meal_time DESC, id DESC LIMIT 1")
     latest_meal = c.fetchone()
     
-    is_eating = False
-    lm_id, lm_date, lm_start, lm_end = None, None, None, None
-    if latest_meal:
-        lm_id, lm_date, lm_start, lm_end = latest_meal
-        if not lm_end or str(lm_end).strip() == "" or str(lm_end).strip().lower() == "nan":
-            is_eating = True
-
-    # --- 상단 메인 대시보드 ---
-    if is_eating:
-        st.markdown(f"""
-        <div class='status-dashboard status-eating'>
-            <div class='status-title'>🍽️ 현재 식사 중입니다</div>
-            <div class='status-time'>시작: {lm_start}</div>
-            <div class='status-msg'>식사를 완전히 마치셨다면 아래 버튼을 눌러주세요.</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        _, col_end, _ = st.columns([1, 2, 1])
-        with col_end:
-            if st.button("🏁 식사 완료 (공복 타이머 가동)", type="primary", use_container_width=True):
-                now_str = now.strftime("%H:%M")
-                c.execute("UPDATE diet_logs SET meal_end_time=? WHERE rowid=?", (now_str, lm_id))
-                commit_and_sync(conn, ['diet_logs', 'daily_habits', 'beverage_logs', 'exercise_logs', 'daily_weight'])
-                st.session_state.action_toast = "✅ 식사가 완벽하게 기록되었으며 클라우드 연동이 완료되었습니다."
-                st.rerun()
-                
-        st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
-        
+    # --- 상단 메인 대시보드 (오직 공복 타이머만 표시) ---
+    if latest_meal and latest_meal[1]:
+        try:
+            lm_date, lm_end = latest_meal
+            last_dt = datetime.strptime(f"{lm_date} {lm_end}", "%Y-%m-%d %H:%M")
+            fasting_delta = now - last_dt
+            f_hours = int(fasting_delta.total_seconds() // 3600)
+            f_mins = int((fasting_delta.total_seconds() % 3600) // 60)
+            
+            if f_hours >= 12: f_msg = "🔥 췌장 휴식 완료! 체지방 연소 모드 진입"
+            elif f_hours >= 4: f_msg = "🟢 인슐린 안정화 구간"
+            elif f_hours < 0: f_hours, f_mins, f_msg = 0, 0, "🟡 음식물 소화 및 혈당 처리 중" # 미래 시간 대비
+            else: f_msg = "🟡 음식물 소화 및 혈당 처리 중"
+            
+            st.markdown(f"""
+            <div class='status-dashboard status-fasting'>
+                <div class='status-title'>마지막 식사로부터 공복 유지</div>
+                <div class='status-time'>{f_hours}시간 {f_mins}분 째</div>
+                <div class='status-msg'>{f_msg}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        except:
+            st.markdown(f"<div class='status-dashboard status-wait'><div class='status-title'>타이머 대기 중</div><div class='status-msg'>시간 기록 오류. 새 식단을 정확한 시간으로 저장하세요.</div></div>", unsafe_allow_html=True)
     else:
-        if latest_meal and lm_end:
-            try:
-                last_dt = datetime.strptime(f"{lm_date} {lm_end}", "%Y-%m-%d %H:%M")
-                fasting_delta = now - last_dt
-                f_hours = int(fasting_delta.total_seconds() // 3600)
-                f_mins = int((fasting_delta.total_seconds() % 3600) // 60)
-                
-                if f_hours >= 12: f_msg = "🔥 췌장 휴식 완료! 체지방 연소 모드 진입"
-                elif f_hours >= 4: f_msg = "🟢 인슐린 안정화 구간"
-                else: f_msg = "🟡 음식물 소화 및 혈당 처리 중"
-                
-                st.markdown(f"""
-                <div class='status-dashboard status-fasting'>
-                    <div class='status-title'>마지막 식사로부터 공복 유지</div>
-                    <div class='status-time'>{f_hours}시간 {f_mins}분 째</div>
-                    <div class='status-msg'>{f_msg}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            except:
-                st.markdown(f"<div class='status-dashboard status-wait'><div class='status-title'>타이머 대기 중</div><div class='status-msg'>기록 오류</div></div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<div class='status-dashboard status-wait'><div class='status-title'>타이머 대기 중</div><div class='status-msg'>첫 식사를 기록해주세요.</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='status-dashboard status-wait'><div class='status-title'>타이머 대기 중</div><div class='status-msg'>식사 기록이 없습니다. 첫 식사를 기록해주세요.</div></div>", unsafe_allow_html=True)
 
     # --- 서브 탭 영역 ---
     tab_list = ["🥗 식단 기록", "⏰ 습관", "🏋️ 운동", "📉 체중"]
@@ -381,19 +351,16 @@ if menu == "📝 일일 기록 (메인)":
     tabs = st.tabs(tab_list)
     
     with tabs[0]: 
-        st.markdown(f"##### {'➕ 현재 식사에 메뉴 추가하기' if is_eating else '🍽️ 새로운 식사 시작 (메뉴 기록)'}")
+        st.markdown("##### 🍽️ 새로운 식사 기록")
         
-        meal_type_idx = 0
-        if is_eating and lm_id: 
-            try:
-                c.execute("SELECT meal_type FROM diet_logs WHERE rowid=?", (lm_id,))
-                prev_row = c.fetchone()
-                if prev_row and prev_row[0] in ["아침", "점심", "저녁", "간식", "야식"]:
-                    meal_type_idx = ["아침", "점심", "저녁", "간식", "야식"].index(prev_row[0])
-            except Exception as e:
-                pass
-
-        meal_type = st.selectbox("식사 구분", ["아침", "점심", "저녁", "간식", "야식"], index=meal_type_idx)
+        # [변경됨] 수기 입력 방식으로 UI 최적화
+        col_t1, col_t2, col_t3 = st.columns(3)
+        with col_t1: 
+            user_start_time = st.text_input("시작 시각 (예: 12:00)", value=now.strftime("%H:%M"))
+        with col_t2: 
+            user_end_time = st.text_input("종료 시각 (예: 12:30)", value=(now + timedelta(minutes=20)).strftime("%H:%M"))
+        with col_t3: 
+            meal_type = st.selectbox("식사 구분", ["아침", "점심", "저녁", "간식", "야식"])
 
         if 'camera_on' not in st.session_state: st.session_state.camera_on = False
         if 'ai_menu' not in st.session_state:
@@ -474,7 +441,8 @@ if menu == "📝 일일 기록 (메인)":
                 sat_fat_v = st.session_state.ai_sat_fat
                 trans_fat_v = st.session_state.ai_trans_fat
                 
-                if st.form_submit_button("현재 식단 저장"):
+                # [변경됨] 메인 저장 버튼 하나로 완벽하게 폼과 시간을 동시 처리
+                if st.form_submit_button("식단 최종 저장 (클라우드 연동)", type="primary"):
                     try:
                         cal = float(calories_v)
                         carb, protein, fat = float(carb_v), float(protein_v), float(fat_v)
@@ -482,19 +450,19 @@ if menu == "📝 일일 기록 (메인)":
                         
                         m_name = menu_name.strip() if menu_name.strip() else "직접 입력 식단"
                         q = st.session_state.ai_quality
-                        now_str = now.strftime("%H:%M")
                         
+                        # 사용자 입력 시각 그대로 DB 삽입
                         c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
-                                  (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, now_str, "", q))
+                                  (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, user_start_time.strip(), user_end_time.strip(), q))
                         
                         conn.commit()
-                        commit_and_sync(conn, ['diet_logs'])
+                        commit_and_sync(conn, ['diet_logs', 'daily_habits', 'beverage_logs', 'exercise_logs', 'daily_weight'])
                         
                         st.session_state.ai_menu = ""
                         st.session_state.ai_calories = 0
                         for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
                         
-                        st.session_state.action_toast = "✅ 메뉴가 저장되었습니다! 식사를 마치시면 상단의 [식사 완료] 버튼을 눌러주세요."
+                        st.session_state.action_toast = f"✅ [{user_end_time}] 기준으로 식사가 완료되었으며, 공복 타이머가 즉시 가동됩니다."
                         st.rerun() 
                     except ValueError: st.error("수치는 반드시 숫자만 입력해주세요.")
 
