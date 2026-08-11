@@ -379,12 +379,9 @@ if menu == "📝 일일 기록 (메인)":
                             try:
                                 genai.configure(api_key=GEMINI_API_KEY)
                                 
-                                # 💡 [최고 퍼포먼스 세팅] 창의성 완벽 통제 및 JSON 강제 출력
+                                # 💡 [3.6 Flash 전용 최적화] 무시되는 온도 제어 삭제 및 사고 수준(Thinking Level) 극대화
                                 generation_config = {
-                                    "temperature": 0.0,
-                                    "top_p": 1.0,
-                                    "top_k": 32,
-                                    "max_output_tokens": 1024,
+                                    "thinking_level": "HIGH",
                                     "response_mime_type": "application/json"
                                 }
                                 
