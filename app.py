@@ -301,7 +301,6 @@ if menu == "📝 일일 기록 (메인)":
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='date-display'>{date_display}</div>", unsafe_allow_html=True)
     
-    # [수정됨] NaN, None 등의 결측치 문자를 완벽하게 잡아내어 무조건 식사 중으로 인식하게 함
     c.execute("SELECT date, meal_time, meal_end_time, menu_name FROM diet_logs ORDER BY date DESC, meal_time DESC, id DESC LIMIT 1")
     latest_meal = c.fetchone()
     
@@ -339,7 +338,6 @@ if menu == "📝 일일 기록 (메인)":
     else:
         st.markdown(f"<div class='status-dashboard status-wait'><div class='status-title'>타이머 대기 중</div><div class='status-msg'>식사 기록이 없습니다. 첫 식사를 기록해주세요.</div></div>", unsafe_allow_html=True)
 
-    # --- 서브 탭 영역 ---
     tab_list = ["🥗 식단 기록", "⏰ 습관", "🏋️ 운동", "📉 체중"]
     if p.get('gender') == '여성': tab_list.append("🩸 주기")
     tabs = st.tabs(tab_list)
@@ -377,30 +375,41 @@ if menu == "📝 일일 기록 (메인)":
                 if st.button("🔍 AI 심층 영양소 분석"):
                     if not GEMINI_API_KEY: st.error("API 금고가 비어있습니다.")
                     else:
-                        with st.spinner("AI가 질감과 재료의 다각적 변수를 분석 중입니다..."):
+                        with st.spinner("AI가 시각적 형태보다 텍스트(OCR)를 최우선으로 정밀 판독 중입니다..."):
                             try:
                                 genai.configure(api_key=GEMINI_API_KEY)
-                                model = genai.GenerativeModel('gemini-3.6-flash')
                                 
-                                prompt = '''너는 수십 년 경력의 임상 영양학자이자 AI 데이터 분석가야.
-                                사진이나 제품 패키지를 보고 아래의 [필수 사고 과정] 1~7단계를 반드시 내재적으로 거친 후, 8단계의 JSON 결과만 출력해.
+                                # 💡 [최고 퍼포먼스 세팅] 창의성 완벽 통제 및 JSON 강제 출력
+                                generation_config = {
+                                    "temperature": 0.0,
+                                    "top_p": 1.0,
+                                    "top_k": 32,
+                                    "max_output_tokens": 1024,
+                                    "response_mime_type": "application/json"
+                                }
+                                
+                                model = genai.GenerativeModel(
+                                    model_name='gemini-3.6-flash',
+                                    generation_config=generation_config
+                                )
+                                
+                                # 💡 [최적화 프롬프트] 형태 추측 금지 및 팩트 기반 데이터 추출
+                                prompt = '''당신은 식품 영양 분석 전문가이자 광학 문자 인식(OCR) 시스템입니다.
+                                사진을 분석하여 아래의 [절대 행동 지침]을 엄격히 준수한 후 JSON으로만 결과를 출력하십시오.
 
-                                [필수 사고 과정]
-                                1. 단계별 필수 추론: 음식의 카테고리(예: 빙과류인지, 우유가 섞인 아이스밀크인지, 튀김인지 구이인지)와 주요 원재료의 질감을 확정하라.
-                                2. 값의 다각화: 사진 표면에 드러나지 않는 이면의 재료(소스 내 당류, 식용유, 첨가물, 보존제 비율)를 폭넓게 추정하라.
-                                3. 변수들의 연결: 1단계의 주원료 카테고리와 2단계의 숨은 요소가 결합될 때 발생하는 매크로(탄/단/지) 파이를 연결하라.
-                                4. 통합화: 위 과정을 통해 1차 총 칼로리 및 기본 영양소 구성비를 구성하라.
-                                5. 오차 발생 변수 특정: 이 식품군에서 영양소 오차를 가장 크게 유발할 핵심 변수 1~2개 찾아내라.
-                                6. 변수값 중앙값(Median) 부여: 5단계 변수의 최소치와 최대치를 가늠하고, 그 절대적인 중간값(Median)을 실제 적용 값으로 확정하라. 단백질과 식이섬유는 보수적으로 낮게 잡고, 지방과 당류는 카테고리에 맞춰 정밀하게 반영할 것.
-                                7. 재통합화: 6단계의 중간값을 토대로 칼로리와 탄/단/지/당류 등의 최종 수치를 현실적이고 논리적으로 밸런스를 맞춰 재조정하라.
-                                8. 결과값 표시: 도출된 최종 수치를 바탕으로 마크다운 기호(```json) 없이 오직 아래 형식의 순수 JSON 데이터만 출력하라.
+                                [절대 행동 지침]
+                                1. 텍스트 판독(OCR) 최우선: 사진 내에 제품명, 원재료명, 영양성분표 등의 글자가 있다면 시각적 형태나 색상(예: 붉은 양념)보다 글자를 무조건 1순위 팩트로 신뢰하십시오.
+                                2. 시각적 착시 및 추측 금지: 글자 판독이 불가능한 경우에만 시각적 추론을 사용하되, 붉은 닭가슴살을 연어로 오인하는 등의 상상력을 배제하고 가장 보편적인 식재료로 보수적으로 판단하십시오.
+                                3. 객관적 영양 수치 매핑: 판독된 정확한 제품명 또는 메뉴를 바탕으로, 시중의 표준 영양성분 데이터베이스에 가장 근접한 수치를 입력하십시오. 알 수 없는 수치는 0으로 처리하십시오.
+                                4. 출력 형식: 마크다운 기호 없이 순수 JSON 포맷만 반환하십시오.
 
-                                {"name": "음식명", "calories": 0, "carb": 0, "protein": 0, "fat": 0, "sugar": 0, "sat_fat": 0, "trans_fat": 0, "sodium": 0, "fiber": 0, "quality": "좋은 음식/주의 음식/위험 음식"}'''
+                                출력 JSON 키 구조:
+                                {"name": "인식된 정확한 제품명 또는 메뉴명", "calories": 0, "carb": 0, "protein": 0, "fat": 0, "sugar": 0, "sat_fat": 0, "trans_fat": 0, "sodium": 0, "fiber": 0, "quality": "좋은 음식/주의 음식/위험 음식 중 택 1"}'''
                                 
                                 img = Image.open(uploaded_file)
                                 response = model.generate_content([prompt, img])
                                 
-                                result_text = response.text
+                                result_text = response.text.strip()
                                 start_idx, end_idx = result_text.find('{'), result_text.rfind('}')
                                 if start_idx != -1 and end_idx != -1:
                                     ai_data = json.loads(result_text[start_idx:end_idx+1])
@@ -409,8 +418,8 @@ if menu == "📝 일일 기록 (메인)":
                                     for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']:
                                         st.session_state[f'ai_{k}'] = float(ai_data.get(k, 0))
                                     st.session_state.ai_quality = ai_data.get("quality", "좋은 음식")
-                                    st.success(f"✅ 정밀 분석 완료! (메뉴: {st.session_state.ai_menu})")
-                                else: st.error("데이터 인식 실패.")
+                                    st.success(f"✅ 정밀 분석 완료! (인식된 메뉴: {st.session_state.ai_menu})")
+                                else: st.error("데이터 형식 반환에 실패했습니다.")
                             except Exception as e: st.error(f"통신 에러: {e}")
 
         with st.expander("✍️ 수동 입력 및 추출된 영양성분 확인", expanded=True):
