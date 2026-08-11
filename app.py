@@ -49,38 +49,27 @@ st.markdown("""
     [data-testid="baseButton-secondary"] {
         background-color: #2C3E50 !important;
         border: none !important;
-        border-radius: 10px !important;
+        border-radius: 8px !important;
         color: white !important;
-        font-size: 1.1rem !important;
         font-weight: 800 !important;
-        height: 52px !important;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
         transition: all 0.2s ease !important;
-    }
-    [data-testid="baseButton-secondary"]:hover {
-        background-color: #34495E !important;
-        transform: translateY(-1px);
     }
     [data-testid="baseButton-secondary"]:active {
         transform: scale(0.98) !important;
     }
     
-    /* 메인 버튼 */
+    /* 메인 버튼 (입력 저장용) */
     [data-testid="baseButton-primary"] {
         background: linear-gradient(135deg, #FF6B6B, #C0392B) !important;
         border: none !important;
-        border-radius: 12px !important;
+        border-radius: 10px !important;
         color: white !important;
-        font-size: 1.25rem !important;
+        font-size: 1.15rem !important;
         font-weight: 900 !important;
-        height: 60px !important;
-        box-shadow: 0 6px 15px rgba(192, 57, 43, 0.25) !important;
-        letter-spacing: 0.5px !important;
+        height: 55px !important;
+        box-shadow: 0 4px 10px rgba(192, 57, 43, 0.25) !important;
         transition: all 0.2s ease !important;
-    }
-    [data-testid="baseButton-primary"]:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 8px 20px rgba(192, 57, 43, 0.35) !important;
     }
     [data-testid="baseButton-primary"]:active {
         transform: scale(0.98) !important;
@@ -89,6 +78,7 @@ st.markdown("""
     /* 대시보드 디자인 */
     .status-dashboard { padding: 22px; border-radius: 12px; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); color: white;}
     .status-fasting { background: linear-gradient(135deg, #1ABC9C, #16A085); }
+    .status-eating { background: linear-gradient(135deg, #E67E22, #D35400); }
     .status-wait { background: linear-gradient(135deg, #7F8C8D, #95A5A6); box-shadow: none; }
     .status-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 8px; opacity: 0.9;}
     .status-time { font-size: 2.2rem; font-weight: 900; letter-spacing: 1px; margin-bottom: 5px;}
@@ -309,39 +299,50 @@ else:
 # ==========================================
 
 # ------------------------------------------
-# [메뉴 1] 일일 기록 (기본 화면) - 수기 입력 시간 방식 및 UI 최적화 적용
+# [메뉴 1] 일일 기록 (기본 화면) - 역할 분담: 입력만 담당
 # ------------------------------------------
 if menu == "📝 일일 기록 (메인)":
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='date-display'>{date_display}</div>", unsafe_allow_html=True)
     
-    # [변경됨] 오류를 유발하던 상태 전환 머신 제거, 가장 최근 식사의 '종료 시각'을 기준으로 단순 타이머 계산
-    c.execute("SELECT date, meal_end_time FROM diet_logs ORDER BY date DESC, meal_time DESC, id DESC LIMIT 1")
+    # 최근 식사 기록 조회
+    c.execute("SELECT date, meal_time, meal_end_time, menu_name FROM diet_logs ORDER BY date DESC, meal_time DESC, id DESC LIMIT 1")
     latest_meal = c.fetchone()
     
-    # --- 상단 메인 대시보드 (오직 공복 타이머만 표시) ---
-    if latest_meal and latest_meal[1]:
-        try:
-            lm_date, lm_end = latest_meal
-            last_dt = datetime.strptime(f"{lm_date} {lm_end}", "%Y-%m-%d %H:%M")
-            fasting_delta = now - last_dt
-            f_hours = int(fasting_delta.total_seconds() // 3600)
-            f_mins = int((fasting_delta.total_seconds() % 3600) // 60)
-            
-            if f_hours >= 12: f_msg = "🔥 췌장 휴식 완료! 체지방 연소 모드 진입"
-            elif f_hours >= 4: f_msg = "🟢 인슐린 안정화 구간"
-            elif f_hours < 0: f_hours, f_mins, f_msg = 0, 0, "🟡 음식물 소화 및 혈당 처리 중" # 미래 시간 대비
-            else: f_msg = "🟡 음식물 소화 및 혈당 처리 중"
-            
+    # --- 상단 메인 대시보드 ---
+    if latest_meal:
+        lm_date, lm_start, lm_end, lm_name = latest_meal
+        if not lm_end or str(lm_end).strip() == "" or str(lm_end).strip().lower() == "nan":
+            # [역할 분리] 종료 시각이 없으면 탭2에서 종료하라고 유도
             st.markdown(f"""
-            <div class='status-dashboard status-fasting'>
-                <div class='status-title'>마지막 식사로부터 공복 유지</div>
-                <div class='status-time'>{f_hours}시간 {f_mins}분 째</div>
-                <div class='status-msg'>{f_msg}</div>
+            <div class='status-dashboard status-eating'>
+                <div class='status-title'>🍽️ 현재 식사 중입니다: {lm_name}</div>
+                <div class='status-time'>시작: {lm_start}</div>
+                <div class='status-msg'>식사를 마치셨다면 [📅 달력 조회] 탭에서 '식사 종료' 버튼을 눌러주세요.</div>
             </div>
             """, unsafe_allow_html=True)
-        except:
-            st.markdown(f"<div class='status-dashboard status-wait'><div class='status-title'>타이머 대기 중</div><div class='status-msg'>시간 기록 오류. 새 식단을 정확한 시간으로 저장하세요.</div></div>", unsafe_allow_html=True)
+        else:
+            # 정상적인 공복 타이머 가동
+            try:
+                last_dt = datetime.strptime(f"{lm_date} {lm_end}", "%Y-%m-%d %H:%M")
+                fasting_delta = now - last_dt
+                f_hours = int(fasting_delta.total_seconds() // 3600)
+                f_mins = int((fasting_delta.total_seconds() % 3600) // 60)
+                
+                if f_hours >= 12: f_msg = "🔥 췌장 휴식 완료! 체지방 연소 모드 진입"
+                elif f_hours >= 4: f_msg = "🟢 인슐린 안정화 구간"
+                elif f_hours < 0: f_hours, f_mins, f_msg = 0, 0, "🟡 음식물 소화 및 혈당 처리 중"
+                else: f_msg = "🟡 음식물 소화 및 혈당 처리 중"
+                
+                st.markdown(f"""
+                <div class='status-dashboard status-fasting'>
+                    <div class='status-title'>마지막 식사로부터 공복 유지</div>
+                    <div class='status-time'>{f_hours}시간 {f_mins}분 째</div>
+                    <div class='status-msg'>{f_msg}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            except:
+                st.markdown(f"<div class='status-dashboard status-wait'><div class='status-title'>타이머 대기 중</div><div class='status-msg'>시간 기록 오류.</div></div>", unsafe_allow_html=True)
     else:
         st.markdown(f"<div class='status-dashboard status-wait'><div class='status-title'>타이머 대기 중</div><div class='status-msg'>식사 기록이 없습니다. 첫 식사를 기록해주세요.</div></div>", unsafe_allow_html=True)
 
@@ -351,15 +352,13 @@ if menu == "📝 일일 기록 (메인)":
     tabs = st.tabs(tab_list)
     
     with tabs[0]: 
-        st.markdown("##### 🍽️ 새로운 식사 기록")
+        st.markdown("##### 🍽️ 새로운 식사 시작 (입력)")
         
-        # [변경됨] 수기 입력 방식으로 UI 최적화
-        col_t1, col_t2, col_t3 = st.columns(3)
+        # [변경됨] UI 최적화: 종료 시각 폼 삭제, 오직 시작 시각만 입력
+        col_t1, col_t2 = st.columns(2)
         with col_t1: 
-            user_start_time = st.text_input("시작 시각 (예: 12:00)", value=now.strftime("%H:%M"))
+            user_start_time = st.text_input("식사 시작 시각 (예: 12:00)", value=now.strftime("%H:%M"))
         with col_t2: 
-            user_end_time = st.text_input("종료 시각 (예: 12:30)", value=(now + timedelta(minutes=20)).strftime("%H:%M"))
-        with col_t3: 
             meal_type = st.selectbox("식사 구분", ["아침", "점심", "저녁", "간식", "야식"])
 
         if 'camera_on' not in st.session_state: st.session_state.camera_on = False
@@ -399,8 +398,8 @@ if menu == "📝 일일 기록 (메인)":
                                 2. 값의 다각화: 사진 표면에 드러나지 않는 이면의 재료(소스 내 당류, 식용유, 첨가물, 보존제 비율)를 폭넓게 추정하라.
                                 3. 변수들의 연결: 1단계의 주원료 카테고리와 2단계의 숨은 요소가 결합될 때 발생하는 매크로(탄/단/지) 파이를 연결하라.
                                 4. 통합화: 위 과정을 통해 1차 총 칼로리 및 기본 영양소 구성비를 구성하라.
-                                5. 오차 발생 변수 특정: 이 식품군에서 영양소 오차를 가장 크게 유발할 핵심 변수 1~2개(예: 유지방 함량 유무, 튀김옷 두께, 설탕 시럽 양)를 찾아내라.
-                                6. 변수값 중앙값(Median) 부여: 5단계 변수의 최소치와 최대치를 가늠하고, 그 절대적인 중간값(Median)을 실제 적용 값으로 확정하라. (단순히 수치를 일괄 상향하는 오류를 절대 범하지 말 것. 단백질과 식이섬유는 보수적으로 낮게 잡고, 지방과 당류는 카테고리에 맞춰 정밀하게 반영할 것).
+                                5. 오차 발생 변수 특정: 이 식품군에서 영양소 오차를 가장 크게 유발할 핵심 변수 1~2개 찾아내라.
+                                6. 변수값 중앙값(Median) 부여: 5단계 변수의 최소치와 최대치를 가늠하고, 그 절대적인 중간값(Median)을 실제 적용 값으로 확정하라. 단백질과 식이섬유는 보수적으로 낮게 잡고, 지방과 당류는 카테고리에 맞춰 정밀하게 반영할 것.
                                 7. 재통합화: 6단계의 중간값을 토대로 칼로리와 탄/단/지/당류 등의 최종 수치를 현실적이고 논리적으로 밸런스를 맞춰 재조정하라.
                                 8. 결과값 표시: 도출된 최종 수치를 바탕으로 마크다운 기호(```json) 없이 오직 아래 형식의 순수 JSON 데이터만 출력하라.
 
@@ -441,8 +440,7 @@ if menu == "📝 일일 기록 (메인)":
                 sat_fat_v = st.session_state.ai_sat_fat
                 trans_fat_v = st.session_state.ai_trans_fat
                 
-                # [변경됨] 메인 저장 버튼 하나로 완벽하게 폼과 시간을 동시 처리
-                if st.form_submit_button("식단 최종 저장 (클라우드 연동)", type="primary"):
+                if st.form_submit_button("식단 기록 시작 (클라우드 임시저장)", type="primary"):
                     try:
                         cal = float(calories_v)
                         carb, protein, fat = float(carb_v), float(protein_v), float(fat_v)
@@ -451,18 +449,18 @@ if menu == "📝 일일 기록 (메인)":
                         m_name = menu_name.strip() if menu_name.strip() else "직접 입력 식단"
                         q = st.session_state.ai_quality
                         
-                        # 사용자 입력 시각 그대로 DB 삽입
+                        # [핵심] meal_end_time 은 공백으로 남겨둔 채 저장
                         c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
-                                  (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, user_start_time.strip(), user_end_time.strip(), q))
+                                  (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, user_start_time.strip(), "", q))
                         
                         conn.commit()
-                        commit_and_sync(conn, ['diet_logs', 'daily_habits', 'beverage_logs', 'exercise_logs', 'daily_weight'])
+                        commit_and_sync(conn, ['diet_logs'])
                         
                         st.session_state.ai_menu = ""
                         st.session_state.ai_calories = 0
                         for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
                         
-                        st.session_state.action_toast = f"✅ [{user_end_time}] 기준으로 식사가 완료되었으며, 공복 타이머가 즉시 가동됩니다."
+                        st.session_state.action_toast = f"✅ 식사가 시작되었습니다! 폰을 덮어두시고 식사 후 [달력 조회] 메뉴에서 식사 종료를 눌러주세요."
                         st.rerun() 
                     except ValueError: st.error("수치는 반드시 숫자만 입력해주세요.")
 
@@ -486,14 +484,14 @@ if menu == "📝 일일 기록 (메인)":
                 if w_df.empty: c.execute(f"INSERT INTO daily_habits (date, water_unit, water_amt) VALUES ('{today_str}', '잔', 1.0)")
                 else: c.execute(f"UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 1.0 WHERE date='{today_str}'")
                 conn.commit() 
-                st.session_state.habit_msg = "💧 생수 1단위가 로컬에 추가되었습니다. (동기화 대기중)"
+                st.session_state.habit_msg = "💧 생수 1단위가 로컬에 추가되었습니다."
                 st.rerun()
         with col_w2:
             if st.button("💧 큰 컵 (+2)", use_container_width=True):
                 if w_df.empty: c.execute(f"INSERT INTO daily_habits (date, water_unit, water_amt) VALUES ('{today_str}', '잔', 2.0)")
                 else: c.execute(f"UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 2.0 WHERE date='{today_str}'")
                 conn.commit() 
-                st.session_state.habit_msg = "💧 생수 2단위가 로컬에 추가되었습니다. (동기화 대기중)"
+                st.session_state.habit_msg = "💧 생수 2단위가 로컬에 추가되었습니다."
                 st.rerun()
                 
         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
@@ -511,14 +509,14 @@ if menu == "📝 일일 기록 (메인)":
                 if b_df.empty: c.execute(f"INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES ('{today_str}', '{selected_b_name}', 1.0, '작은 캔')")
                 else: c.execute(f"UPDATE beverage_logs SET amount = amount + 1.0 WHERE id={b_df.iloc[0]['id']}")
                 conn.commit() 
-                st.session_state.habit_msg = f"☕ [{selected_b_name}] 1단위가 로컬에 추가되었습니다. (동기화 대기중)"
+                st.session_state.habit_msg = f"☕ [{selected_b_name}] 1단위가 로컬에 추가되었습니다."
                 st.rerun()
         with col_b2:
             if st.button("☕ 큰 캔 (+2)", use_container_width=True):
                 if b_df.empty: c.execute(f"INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES ('{today_str}', '{selected_b_name}', 2.0, '큰 캔')")
                 else: c.execute(f"UPDATE beverage_logs SET amount = amount + 2.0 WHERE id={b_df.iloc[0]['id']}")
                 conn.commit() 
-                st.session_state.habit_msg = f"☕ [{selected_b_name}] 2단위가 로컬에 추가되었습니다. (동기화 대기중)"
+                st.session_state.habit_msg = f"☕ [{selected_b_name}] 2단위가 로컬에 추가되었습니다."
                 st.rerun()
 
         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
@@ -607,7 +605,7 @@ if menu == "📝 일일 기록 (메인)":
                     c.execute("INSERT INTO exercise_logs (date, ex_name, duration, calories_burned) VALUES (?, ?, ?, ?)", (today_str, st.session_state.active_ex_name.split(' (')[0], ex_min, burned_cal))
                     conn.commit() 
                     st.session_state.ex_mins = 0
-                    st.success(f"🔥 총 {burned_cal}kcal 소모 기록 완료! (클라우드는 식사 종료 시 자동 연동됩니다.)")
+                    st.success(f"🔥 총 {burned_cal}kcal 소모 기록 완료!")
                 except ValueError: st.error("숫자만 입력해주세요.")
 
     with tabs[3]:
@@ -629,7 +627,7 @@ if menu == "📝 일일 기록 (메인)":
                     if not is_new_user:
                         c.execute(f"UPDATE user_profile SET weight = {today_w} WHERE id = {p['id']}")
                     conn.commit() 
-                    st.success("로컬에 안전하게 저장되었습니다. (클라우드는 식사 종료 시 자동 연동됩니다.)")
+                    st.success("로컬에 안전하게 저장되었습니다.")
                 except ValueError: st.error("숫자만 입력해주세요.")
 
     if len(tabs) == 5: 
@@ -642,11 +640,11 @@ if menu == "📝 일일 기록 (메인)":
                         valid_date = datetime.strptime(last_p_date.strip(), "%Y-%m-%d")
                         c.execute(f"UPDATE user_profile SET last_period_date = '{last_p_date}' WHERE id = {p['id']}")
                         conn.commit() 
-                        st.success("저장 완료. 달력 조회에서 피드백을 확인하세요.")
+                        st.success("저장 완료.")
                     except ValueError: st.error("날짜 형식을 맞춰주세요.")
 
 # ------------------------------------------
-# [메뉴 2] 📅 달력 조회 (데이터베이스 통합본)
+# [메뉴 2] 📅 달력 조회 (데이터베이스 통합본) - 역할 분담: 데이터 확정(종료) 담당
 # ------------------------------------------
 elif menu == "📅 달력 조회":
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
@@ -717,7 +715,31 @@ elif menu == "📅 달력 조회":
     
     st.markdown(f"<div class='micro-box'>🔬 <b>미량 영양소 추적:</b> 나트륨 <b>{int(e_sodium)}mg</b> (권장 2000mg 이하) &nbsp; | &nbsp; 식이섬유 <b>{int(e_fiber)}g</b> (권장 25g 이상)</div>", unsafe_allow_html=True)
 
-    st.markdown("##### 🍽 식단 기록 목록")
+    # ==============================================================================
+    # [핵심 변경] 달력 조회 탭 내: '진행 중인 식사 종료' 전용 UI 배치 (공간 최적화)
+    # ==============================================================================
+    col_list_title, col_list_btn = st.columns([6, 4])
+    with col_list_title:
+        st.markdown("##### 🍽 식단 기록 목록")
+    
+    c.execute(f"SELECT id, menu_name, meal_time FROM diet_logs WHERE date='{view_date_str}' AND (meal_end_time IS NULL OR meal_end_time = '') ORDER BY id DESC LIMIT 1")
+    active_meal = c.fetchone()
+    
+    if active_meal:
+        am_id, am_name, am_start = active_meal
+        with col_list_btn:
+            if st.button("🏁 식사 종료", key="end_meal_btn", type="primary"):
+                now_str = now.strftime("%H:%M")
+                c.execute("UPDATE diet_logs SET meal_end_time=? WHERE id=?", (now_str, am_id))
+                commit_and_sync(conn, ['diet_logs', 'daily_habits', 'beverage_logs', 'exercise_logs', 'daily_weight'])
+                st.session_state.action_toast = "✅ 식사가 종료되어 공복 타이머가 가동되었습니다."
+                st.rerun()
+        st.markdown(f"<div style='background:#FFF3CD; padding:8px 12px; border-radius:6px; border-left:4px solid #F1C40F; margin-bottom:12px;'><span style='font-size:0.9rem; font-weight:bold; color:#7D6608;'>⏳ 현재 진행 중: {am_name} (시작: {am_start} ~ )</span></div>", unsafe_allow_html=True)
+    else:
+        with col_list_btn:
+            pass
+    # ==============================================================================
+
     table_html = "<table class='diet-table'><tr><th style='width:25%;'>시간</th><th style='width:50%;'>메뉴</th><th style='width:25%;'>평가</th></tr>"
     if logs.empty: table_html += "<tr><td colspan='3' style='color:#7F8C8D; padding:20px 0;'>기록된 식단이 없습니다.</td></tr>"
     else:
@@ -727,7 +749,7 @@ elif menu == "📅 달력 조회":
             elif "주의" in q: badge = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의 음식</span>"
             else: badge = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험 음식</span>"
             
-            end_t = f"~ {row['meal_end_time']}" if pd.notna(row['meal_end_time']) and row['meal_end_time'] else ""
+            end_t = f"~ {row['meal_end_time']}" if pd.notna(row['meal_end_time']) and str(row['meal_end_time']).strip() != "" else "<span style='color:#E74C3C;'>(식사 중)</span>"
             table_html += f"<tr><td><b>{row['meal_time']}</b><br><span style='font-size:0.75rem; color:#7F8C8D;'>{end_t}</span></td><td><b style='color:#2C3E50;'>{row['menu_name']}</b></td><td>{badge}</td></tr>"
     table_html += "</table>"
     st.markdown(table_html, unsafe_allow_html=True)
