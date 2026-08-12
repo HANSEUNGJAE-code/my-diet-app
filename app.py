@@ -112,7 +112,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1.5 카테고리 정의
+# 1.5 카테고 정의
 # ==========================================
 BEV_CATEGORIES = [
     "아메리카노 / 에스프레소", "차류 (녹차, 홍차, 콤부차 등)", "제로 칼로리 음료 (제로콜라 등)",
@@ -194,8 +194,12 @@ def commit_and_sync(conn, table_names=None):
             if not df.empty:
                 clean_df = df.fillna("").astype(str).replace(["nan", "NaN", "None", "<NA>"], "")
                 data = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
-                try: ws.update(data)
-                except: ws.update('A1', data)
+                
+                # 명시적 파라미터를 사용하여 최신 gspread 버전에 호환되도록 수정
+                try:
+                    ws.update(values=data, range_name='A1')
+                except Exception as e:
+                    print(f"[{t}] 테이블 동기화 에러 발생: {e}") 
         except: pass
 
 if 'db_synced' not in st.session_state:
@@ -379,17 +383,16 @@ if menu == "📝 일일 기록 (메인)":
                             try:
                                 genai.configure(api_key=GEMINI_API_KEY)
                                 
-                                # 💡 버전 오류가 없는 구글 범용 호환 옵션 세팅
                                 generation_config = {
                                     "response_mime_type": "application/json"
                                 }
                                 
+                                # 안정적인 gemini-3.5-flash 모델로 변경 적용
                                 model = genai.GenerativeModel(
-                                    model_name='gemini-3.6-flash',
+                                    model_name='gemini-3.5-flash',
                                     generation_config=generation_config
                                 )
                                 
-                                # 💡 [최적화 프롬프트] 형태 추측 금지 및 팩트 기반 데이터 추출
                                 prompt = '''당신은 식품 영양 분석 전문가이자 광학 문자 인식(OCR) 시스템입니다.
                                 사진을 분석하여 아래의 [절대 행동 지침]을 엄격히 준수한 후 JSON으로만 결과를 출력하십시오.
 
@@ -690,7 +693,6 @@ elif menu == "📅 달력 조회":
     t_f = t_f_base
     
     try:
-        # 👉 SELECT rowid as db_rowid, * 로 변경하여 숨겨진 절대 고유번호를 강제로 가져옵니다.
         logs = pd.read_sql(f"SELECT rowid as db_rowid, * FROM diet_logs WHERE date='{view_date_str}'", conn)
         e_cal = logs['calories'].sum() if not logs.empty and 'calories' in logs.columns else 0
         e_c = logs['carb'].sum() if not logs.empty and 'carb' in logs.columns else 0
@@ -765,11 +767,9 @@ elif menu == "📅 달력 조회":
     if not logs.empty:
         with st.expander("🛠️ 식단 삭제하기"):
             with st.form("delete_diet_form"):
-                # 👉 빈 칸이 될 수 있는 id 대신 절대 고유번호인 db_rowid 사용
                 del_options = {f"[{row['meal_time']}] {row['menu_name']} (고유번호: {row['db_rowid']})": row['db_rowid'] for idx, row in logs.iterrows()}
                 selected_del_key = st.selectbox("삭제할 식단 선택", options=list(del_options.keys()))
                 if st.form_submit_button("영구 삭제"):
-                    # 👉 id가 아닌 rowid를 기준으로 삭제
                     c.execute("DELETE FROM diet_logs WHERE rowid = ?", (del_options[selected_del_key],))
                     commit_and_sync(conn, ['diet_logs'])
                     st.rerun()
