@@ -350,8 +350,8 @@ if menu == "📝 일일 기록 (메인)":
         st.markdown("##### 🍽️ 새로운 식사 시작 (입력)")
         
         user_start_time = st.text_input("식사 시작 시각 (예: 12:00)", value=now.strftime("%H:%M"))
-meal_type = ""  # 기존 DB 저장 로직(INSERT)과의 호환성을 위해 변수는 빈 문자열로 유지합니다.
-
+        meal_type = ""
+        
         if 'camera_on' not in st.session_state: st.session_state.camera_on = False
         if 'ai_menu' not in st.session_state:
             st.session_state.ai_menu = ""
@@ -362,11 +362,11 @@ meal_type = ""  # 기존 DB 저장 로직(INSERT)과의 호환성을 위해 변�
         col_btn, _ = st.columns([1, 1])
         with col_btn:
             if not st.session_state.camera_on:
-                if st.button("📷 스마트 카메라 켜기"):
+                if st.button("📷 스마트 카메라 켜기", use_container_width=True):
                     st.session_state.camera_on = True
                     st.rerun()
             else:
-                if st.button("❌ 카메라 닫기"):
+                if st.button("❌ 카메라 닫기", use_container_width=True):
                     st.session_state.camera_on = False
                     st.rerun()
                     
