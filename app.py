@@ -349,11 +349,8 @@ if menu == "📝 일일 기록 (메인)":
     with tabs[0]: 
         st.markdown("##### 🍽️ 새로운 식사 시작 (입력)")
         
-        col_t1, col_t2 = st.columns(2)
-        with col_t1: 
-            user_start_time = st.text_input("식사 시작 시각 (예: 12:00)", value=now.strftime("%H:%M"))
-        with col_t2: 
-            meal_type = st.selectbox("식사 구분", ["아침", "점심", "저녁", "간식", "야식"])
+        user_start_time = st.text_input("식사 시작 시각 (예: 12:00)", value=now.strftime("%H:%M"))
+meal_type = ""  # 기존 DB 저장 로직(INSERT)과의 호환성을 위해 변수는 빈 문자열로 유지합니다.
 
         if 'camera_on' not in st.session_state: st.session_state.camera_on = False
         if 'ai_menu' not in st.session_state:
@@ -387,9 +384,9 @@ if menu == "📝 일일 기록 (메인)":
                                     "response_mime_type": "application/json"
                                 }
                                 
-                                # 안정적인 gemini-3.5-flash 모델로 변경 적용
+                                # 더 똑똑하고 강력해진 최신 3.7 Flash 모델로 업그레이드!
                                 model = genai.GenerativeModel(
-                                    model_name='gemini-3.5-flash',
+                                    model_name='gemini-3.7-flash',
                                     generation_config=generation_config
                                 )
                                 
