@@ -488,14 +488,16 @@ if menu == "📝 일일 기록 (메인)":
             if st.button("💧 작은 컵 (+1)", use_container_width=True):
                 if w_df.empty: c.execute(f"INSERT INTO daily_habits (date, water_unit, water_amt) VALUES ('{today_str}', '잔', 1.0)")
                 else: c.execute(f"UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 1.0 WHERE date='{today_str}'")
-                conn.commit() 
-                st.session_state.habit_msg = "💧 생수 1단위가 로컬에 추가되었습니다."
+                conn.commit()
+                commit_and_sync(conn, ['daily_habits']) # 이 줄 추가
+                st.session_state.habit_msg = "💧 생수 1단위가 클라우드에 추가되었습니다."
                 st.rerun()
         with col_w2:
             if st.button("💧 큰 컵 (+2)", use_container_width=True):
                 if w_df.empty: c.execute(f"INSERT INTO daily_habits (date, water_unit, water_amt) VALUES ('{today_str}', '잔', 2.0)")
                 else: c.execute(f"UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 2.0 WHERE date='{today_str}'")
                 conn.commit() 
+                commit_and_sync(conn, ['daily_habits']) # 이 줄 추가
                 st.session_state.habit_msg = "💧 생수 2단위가 로컬에 추가되었습니다."
                 st.rerun()
                 
@@ -513,14 +515,16 @@ if menu == "📝 일일 기록 (메인)":
             if st.button("☕ 작은 캔 (+1)", use_container_width=True):
                 if b_df.empty: c.execute(f"INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES ('{today_str}', '{selected_b_name}', 1.0, '작은 캔')")
                 else: c.execute(f"UPDATE beverage_logs SET amount = amount + 1.0 WHERE id={b_df.iloc[0]['id']}")
-                conn.commit() 
+                conn.commit()
+                commit_and_sync(conn, ['beverage_logs']) # 이 줄 추가 
                 st.session_state.habit_msg = f"☕ [{selected_b_name}] 1단위가 로컬에 추가되었습니다."
                 st.rerun()
         with col_b2:
             if st.button("☕ 큰 캔 (+2)", use_container_width=True):
                 if b_df.empty: c.execute(f"INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES ('{today_str}', '{selected_b_name}', 2.0, '큰 캔')")
                 else: c.execute(f"UPDATE beverage_logs SET amount = amount + 2.0 WHERE id={b_df.iloc[0]['id']}")
-                conn.commit() 
+                conn.commit()
+                commit_and_sync(conn, ['beverage_logs']) # 이 줄 추가 
                 st.session_state.habit_msg = f"☕ [{selected_b_name}] 2단위가 로컬에 추가되었습니다."
                 st.rerun()
 
@@ -559,6 +563,7 @@ if menu == "📝 일일 기록 (메인)":
                         c.execute(f"DELETE FROM beverage_logs WHERE id={b_df.iloc[0]['id']}")
                         
                     conn.commit() 
+                    commit_and_sync(conn, ['daily_habits', 'beverage_logs']) # 이 줄 추가
                     st.success("로컬 데이터베이스에 완벽히 업데이트되었습니다!")
                 except ValueError:
                     st.error("섭취량은 숫자만 입력해야 합니다.")
@@ -609,6 +614,7 @@ if menu == "📝 일일 기록 (메인)":
                     
                     c.execute("INSERT INTO exercise_logs (date, ex_name, duration, calories_burned) VALUES (?, ?, ?, ?)", (today_str, st.session_state.active_ex_name.split(' (')[0], ex_min, burned_cal))
                     conn.commit() 
+                    commit_and_sync(conn, ['exercise_logs']) # 이 줄 추가
                     st.session_state.ex_mins = 0
                     st.success(f"🔥 총 {burned_cal}kcal 소모 기록 완료!")
                 except ValueError: st.error("숫자만 입력해주세요.")
@@ -631,8 +637,9 @@ if menu == "📝 일일 기록 (메인)":
                         
                     if not is_new_user:
                         c.execute(f"UPDATE user_profile SET weight = {today_w} WHERE id = {p['id']}")
-                    conn.commit() 
-                    st.success("로컬에 안전하게 저장되었습니다.")
+                    conn.commit()
+                    commit_and_sync(conn, ['daily_weight', 'user_profile']) # 이 줄 추가
+                    st.success("클라우드에 안전하게 저장되었습니다.")
                 except ValueError: st.error("숫자만 입력해주세요.")
 
     if len(tabs) == 5: 
@@ -644,7 +651,8 @@ if menu == "📝 일일 기록 (메인)":
                     try:
                         valid_date = datetime.strptime(last_p_date.strip(), "%Y-%m-%d")
                         c.execute(f"UPDATE user_profile SET last_period_date = '{last_p_date}' WHERE id = {p['id']}")
-                        conn.commit() 
+                        conn.commit()
+                        commit_and_sync(conn, ['user_profile']) # 이 줄 추가
                         st.success("저장 완료.")
                     except ValueError: st.error("날짜 형식을 맞춰주세요.")
 
