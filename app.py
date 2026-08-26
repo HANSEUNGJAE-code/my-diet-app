@@ -112,7 +112,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1.5 카테고 정의
+# 1.5 카테고리 정의
 # ==========================================
 BEV_CATEGORIES = [
     "아메리카노 / 에스프레소", "차류 (녹차, 홍차, 콤부차 등)", "제로 칼로리 음료 (제로콜라 등)",
@@ -384,7 +384,7 @@ if menu == "📝 일일 기록 (메인)":
                                     "response_mime_type": "application/json"
                                 }
                                 
-                                # 더 똑똑하고 강력해진 최신 3.7 Flash 모델로 업그레이드!
+                                # 브쌤이 작성한 최신 3.7 Flash 모델명 정상 유지
                                 model = genai.GenerativeModel(
                                     model_name='gemini-3.7-flash',
                                     generation_config=generation_config
@@ -402,7 +402,8 @@ if menu == "📝 일일 기록 (메인)":
                                 출력 JSON 키 구조:
                                 {"name": "인식된 정확한 제품명 또는 메뉴명", "calories": 0, "carb": 0, "protein": 0, "fat": 0, "sugar": 0, "sat_fat": 0, "trans_fat": 0, "sodium": 0, "fiber": 0, "quality": "좋은 음식/주의 음식/위험 음식 중 택 1"}'''
                                 
-                                img = Image.open(uploaded_file)
+                                # 💡 핵심 해결책: RGBA 등 충돌을 일으키는 포맷을 순수 RGB로 강제 변환
+                                img = Image.open(uploaded_file).convert('RGB')
                                 response = model.generate_content([prompt, img])
                                 
                                 result_text = response.text.strip()
@@ -464,10 +465,10 @@ if menu == "📝 일일 기록 (메인)":
                             st.rerun() 
                     except ValueError: 
                         st.error("수치는 반드시 숫자만 입력해주세요.")
-            
-            if st.session_state.get("meal_start_success"):
-                st.success("✅ 저장이 완료되었습니다! 편안한 식사 후 [📅 달력 조회] 탭에서 '식사 종료' 버튼을 눌러주세요.")
-                st.session_state.meal_start_success = False
+        
+        if st.session_state.get("meal_start_success"):
+            st.success("✅ 저장이 완료되었습니다! 편안한 식사 후 [📅 달력 조회] 탭에서 '식사 종료' 버튼을 눌러주세요.")
+            st.session_state.meal_start_success = False
 
     with tabs[1]: 
         if 'habit_msg' in st.session_state:
@@ -489,7 +490,7 @@ if menu == "📝 일일 기록 (메인)":
                 if w_df.empty: c.execute(f"INSERT INTO daily_habits (date, water_unit, water_amt) VALUES ('{today_str}', '잔', 1.0)")
                 else: c.execute(f"UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 1.0 WHERE date='{today_str}'")
                 conn.commit()
-                commit_and_sync(conn, ['daily_habits']) # 이 줄 추가
+                commit_and_sync(conn, ['daily_habits'])
                 st.session_state.habit_msg = "💧 생수 1단위가 클라우드에 추가되었습니다."
                 st.rerun()
         with col_w2:
@@ -497,12 +498,12 @@ if menu == "📝 일일 기록 (메인)":
                 if w_df.empty: c.execute(f"INSERT INTO daily_habits (date, water_unit, water_amt) VALUES ('{today_str}', '잔', 2.0)")
                 else: c.execute(f"UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 2.0 WHERE date='{today_str}'")
                 conn.commit() 
-                commit_and_sync(conn, ['daily_habits']) # 이 줄 추가
+                commit_and_sync(conn, ['daily_habits'])
                 st.session_state.habit_msg = "💧 생수 2단위가 로컬에 추가되었습니다."
                 st.rerun()
                 
         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
-        st.markdown("##### ☕ 음료 카테고리 누적")
+        st.markdown("##### ☕ 음료 카테고 누적")
         selected_b_name = st.selectbox("마신 음료 분류 선택", BEV_CATEGORIES)
         
         b_df = pd.read_sql(f"SELECT * FROM beverage_logs WHERE date='{today_str}' AND bev_name='{selected_b_name}'", conn)
@@ -516,7 +517,7 @@ if menu == "📝 일일 기록 (메인)":
                 if b_df.empty: c.execute(f"INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES ('{today_str}', '{selected_b_name}', 1.0, '작은 캔')")
                 else: c.execute(f"UPDATE beverage_logs SET amount = amount + 1.0 WHERE id={b_df.iloc[0]['id']}")
                 conn.commit()
-                commit_and_sync(conn, ['beverage_logs']) # 이 줄 추가 
+                commit_and_sync(conn, ['beverage_logs'])
                 st.session_state.habit_msg = f"☕ [{selected_b_name}] 1단위가 로컬에 추가되었습니다."
                 st.rerun()
         with col_b2:
@@ -524,7 +525,7 @@ if menu == "📝 일일 기록 (메인)":
                 if b_df.empty: c.execute(f"INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES ('{today_str}', '{selected_b_name}', 2.0, '큰 캔')")
                 else: c.execute(f"UPDATE beverage_logs SET amount = amount + 2.0 WHERE id={b_df.iloc[0]['id']}")
                 conn.commit()
-                commit_and_sync(conn, ['beverage_logs']) # 이 줄 추가 
+                commit_and_sync(conn, ['beverage_logs'])
                 st.session_state.habit_msg = f"☕ [{selected_b_name}] 2단위가 로컬에 추가되었습니다."
                 st.rerun()
 
@@ -563,7 +564,7 @@ if menu == "📝 일일 기록 (메인)":
                         c.execute(f"DELETE FROM beverage_logs WHERE id={b_df.iloc[0]['id']}")
                         
                     conn.commit() 
-                    commit_and_sync(conn, ['daily_habits', 'beverage_logs']) # 이 줄 추가
+                    commit_and_sync(conn, ['daily_habits', 'beverage_logs'])
                     st.success("로컬 데이터베이스에 완벽히 업데이트되었습니다!")
                 except ValueError:
                     st.error("섭취량은 숫자만 입력해야 합니다.")
@@ -614,7 +615,7 @@ if menu == "📝 일일 기록 (메인)":
                     
                     c.execute("INSERT INTO exercise_logs (date, ex_name, duration, calories_burned) VALUES (?, ?, ?, ?)", (today_str, st.session_state.active_ex_name.split(' (')[0], ex_min, burned_cal))
                     conn.commit() 
-                    commit_and_sync(conn, ['exercise_logs']) # 이 줄 추가
+                    commit_and_sync(conn, ['exercise_logs'])
                     st.session_state.ex_mins = 0
                     st.success(f"🔥 총 {burned_cal}kcal 소모 기록 완료!")
                 except ValueError: st.error("숫자만 입력해주세요.")
@@ -638,7 +639,7 @@ if menu == "📝 일일 기록 (메인)":
                     if not is_new_user:
                         c.execute(f"UPDATE user_profile SET weight = {today_w} WHERE id = {p['id']}")
                     conn.commit()
-                    commit_and_sync(conn, ['daily_weight', 'user_profile']) # 이 줄 추가
+                    commit_and_sync(conn, ['daily_weight', 'user_profile'])
                     st.success("클라우드에 안전하게 저장되었습니다.")
                 except ValueError: st.error("숫자만 입력해주세요.")
 
@@ -652,7 +653,7 @@ if menu == "📝 일일 기록 (메인)":
                         valid_date = datetime.strptime(last_p_date.strip(), "%Y-%m-%d")
                         c.execute(f"UPDATE user_profile SET last_period_date = '{last_p_date}' WHERE id = {p['id']}")
                         conn.commit()
-                        commit_and_sync(conn, ['user_profile']) # 이 줄 추가
+                        commit_and_sync(conn, ['user_profile'])
                         st.success("저장 완료.")
                     except ValueError: st.error("날짜 형식을 맞춰주세요.")
 
