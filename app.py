@@ -195,7 +195,6 @@ def commit_and_sync(conn, table_names=None):
                 clean_df = df.fillna("").astype(str).replace(["nan", "NaN", "None", "<NA>"], "")
                 data = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
                 
-                # 명시적 파라미터를 사용하여 최신 gspread 버전에 호환되도록 수정
                 try:
                     ws.update(values=data, range_name='A1')
                 except Exception as e:
@@ -384,7 +383,6 @@ if menu == "📝 일일 기록 (메인)":
                                     "response_mime_type": "application/json"
                                 }
                                 
-                                # 브쌤이 작성한 최신 3.7 Flash 모델명 정상 유지
                                 model = genai.GenerativeModel(
                                     model_name='gemini-3.7-flash',
                                     generation_config=generation_config
@@ -402,7 +400,6 @@ if menu == "📝 일일 기록 (메인)":
                                 출력 JSON 키 구조:
                                 {"name": "인식된 정확한 제품명 또는 메뉴명", "calories": 0, "carb": 0, "protein": 0, "fat": 0, "sugar": 0, "sat_fat": 0, "trans_fat": 0, "sodium": 0, "fiber": 0, "quality": "좋은 음식/주의 음식/위험 음식 중 택 1"}'''
                                 
-                                # 💡 핵심 해결책: RGBA 등 충돌을 일으키는 포맷을 순수 RGB로 강제 변환
                                 img = Image.open(uploaded_file).convert('RGB')
                                 response = model.generate_content([prompt, img])
                                 
@@ -709,6 +706,38 @@ elif menu == "📅 달력 조회":
     except:
         logs = pd.DataFrame()
         e_cal, e_c, e_p, e_f, e_sodium, e_fiber = 0, 0, 0, 0, 0, 0
+        
+    # ==========================================
+    # [수정된 부분] 음료(액상) 칼로리 및 탄수화물/당류 강제 합산 로직
+    # ==========================================
+    bev_df = pd.read_sql(f"SELECT * FROM beverage_logs WHERE date='{view_date_str}'", conn)
+    
+    for idx, b_row in bev_df.iterrows():
+        calc_b_name = b_row['bev_name']
+        calc_b_amt = b_row['amount']
+        calc_b_un = b_row['unit']
+        
+        # 1. 단위별 용량 배수 산출 (100ml 기준)
+        if calc_b_un == "작은 캔": vol_multi = 2.5
+        elif calc_b_un == "큰 캔": vol_multi = 3.55
+        else: vol_multi = 2.0
+        
+        # 2. 카테고리별 100ml당 평균 칼로리(kcal) 및 탄수화물(g) 매핑
+        if calc_b_name in ["일반 탄산음료 (콜라, 사이다)", "과일 주스 / 스무디", "기타 당류 포함 액상"]:
+            k_per_100, c_per_100 = 45, 11
+        elif calc_b_name == "달콤한 커피류 (믹스커피, 바닐라라떼 등)":
+            k_per_100, c_per_100 = 60, 10
+        elif calc_b_name == "가향 우유 (초코우유, 바나나우유 등)":
+            k_per_100, c_per_100 = 80, 10
+        elif calc_b_name in ["단백질 보충 액상", "일반 우유 / 무가당 두유"]:
+            k_per_100, c_per_100 = 50, 5 
+        else: # 아메리카노, 제로콜라, 차류 등 (칼로리 무의미한 수준)
+            k_per_100, c_per_100 = 0, 0
+            
+        # 3. 메인 변수에 누적 합산
+        e_cal += (k_per_100 * vol_multi * calc_b_amt)
+        e_c += (c_per_100 * vol_multi * calc_b_amt)
+    # ==========================================
     
     diff_cal = t_cal - e_cal
     cal_class = "status-green" if diff_cal >= 0 else "status-red"
@@ -801,7 +830,6 @@ elif menu == "📅 달력 조회":
 
     st.markdown("##### 📋 습관 및 체중 피드백")
     habit_df = pd.read_sql(f"SELECT * FROM daily_habits WHERE date='{view_date_str}'", conn)
-    bev_df = pd.read_sql(f"SELECT * FROM beverage_logs WHERE date='{view_date_str}'", conn)
     
     habit_table = "<table class='diet-table'><tr><th style='width:25%;'>항목</th><th style='width:20%;'>상태</th><th style='width:55%;'>전문가 피드백</th></tr>"
     
@@ -831,15 +859,29 @@ elif menu == "📅 달력 조회":
             w_msg = f"생수 {w_amt}{w_un} 섭취 완료. " + ("수분 대사 원활." if w_amt >= target_water else "수분 부족.")
             habit_table += f"<tr><td><b>수분</b></td><td>{w_badge}</td><td style='text-align:left; font-size:0.85rem;'>{w_msg}</td></tr>"
 
+    # ==========================================
+    # [수정된 부분] 음료 피드백 카테고리별 디테일 로직
+    # ==========================================
     for idx, b_row in bev_df.iterrows():
-        b_name, b_amt, b_un = b_row['amount'], b_row['amount'], b_row['unit']
-        if b_name in ["아메리카노 / 에스프레소", "차류 (녹차, 홍차, 콤부차 등)", "제로 칼로리 음료 (제로콜라 등)"]:
-            b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 당류가 없어 안전합니다."
+        b_name, b_amt, b_un = b_row['bev_name'], b_row['amount'], b_row['unit']
+        
+        if b_name == "아메리카노 / 에스프레소":
+            b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 당류가 없어 대사에 좋지만, 이뇨 작용으로 수분이 손실되니 마신 양의 2배만큼 생수를 보충하세요. (늦은 오후 섭취 시 수면 방해 주의)"
+        elif b_name == "차류 (녹차, 홍차, 콤부차 등)":
+            b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 수분 보충과 항산화에 좋으나, 카페인이 든 차는 늦은 시간 섭취를 피하는 것이 좋습니다."
+        elif b_name == "제로 칼로리 음료 (제로콜라 등)":
+            b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 혈당을 올리진 않으나 인공감미료가 뇌의 보상 회로를 자극해 가짜 배고픔을 유발할 수 있습니다. 단독 섭취보다는 식사 중에만 드세요."
         elif b_name in ["단백질 보충 액상", "일반 우유 / 무가당 두유"]:
-            b_badge, b_msg = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의</span>", f"{b_amt}{b_un} 섭취. 잉여 칼로리에 유의하세요."
+            b_badge, b_msg = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의</span>", f"{b_amt}{b_un} 섭취. 영양가는 높으나 '칼로리'가 있어 단식(공복) 시간을 깨뜨립니다. 식사 대용이나 운동 직후에 섭취하세요."
+        elif b_name == "달콤한 커피류 (믹스커피, 바닐라라떼 등)":
+            b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 정제당과 포화지방(크림)의 결합은 혈당 스파이크와 복부 체지방 축적을 가장 빠르고 강하게 유발합니다."
+        elif b_name == "과일 주스 / 스무디":
+            b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 과일을 갈아 마시면 식이섬유 구조가 파괴되어, 액상과당과 똑같이 간에 지방으로 직접 축적됩니다."
         else:
-            b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 당류 스파이크 발생."
+            b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 액상과당은 인슐린을 급격히 분비시켜 체지방 연소 모드를 즉시 중단시킵니다."
+
         habit_table += f"<tr><td><b>음료</b><br><span style='font-size:0.7rem; color:#7F8C8D;'>{b_name}</span></td><td>{b_badge}</td><td style='text-align:left; font-size:0.85rem;'>{b_msg}</td></tr>"
+    # ==========================================
     
     w_hist_df = pd.read_sql(f"SELECT weight FROM daily_weight WHERE date='{view_date_str}'", conn)
     if not w_hist_df.empty:
