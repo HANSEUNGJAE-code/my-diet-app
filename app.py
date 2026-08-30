@@ -7,7 +7,6 @@ import google.generativeai as genai
 from PIL import Image
 import gspread
 from google.oauth2.service_account import Credentials
-import fitz  # PyPDF2 대신 고속 추출을 위한 PyMuPDF 사용
 import io
 
 # ==========================================
@@ -56,23 +55,24 @@ def analyze_food_image(img_bytes, api_key):
 def analyze_atflee_pdf(pdf_bytes, api_key):
     if not api_key: return "{}"
     
-    # 텍스트 추출 병목 해결을 위해 PyMuPDF(fitz) 적용
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    pdf_text = "".join(page.get_text() for page in doc)
-    
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(model_name='gemini-3.7-flash', generation_config={"response_mime_type": "application/json"})
-    prompt = f'''당신은 텍스트 데이터 분석 전문가입니다. 
-    아래 제공된 체성분 분석 결과지 텍스트에서 주요 데이터를 찾아 JSON으로 반환하십시오.
+    
+    prompt = '''당신은 전문 데이터 분석가입니다. 
+    첨부된 체성분 분석 결과지(PDF)를 시각적, 구조적으로 분석하여 주요 데이터를 찾아 JSON으로 반환하십시오.
     
     [절대 행동 지침]
     1. 숫자만 소수점까지 정확히 추출하세요.
     2. 출력은 반드시 아래 JSON 형식으로만 반환하세요.
-    {{"weight": 76.2, "skeletal_muscle": 33.1, "body_fat_percent": 23.1, "visceral_fat": 7, "bmr": 1635}}
+    {"weight": 76.2, "skeletal_muscle": 33.1, "body_fat_percent": 23.1, "visceral_fat": 7, "bmr": 1635}'''
     
-    [PDF 텍스트 데이터]
-    {pdf_text}'''
-    response = model.generate_content(prompt)
+    # 💡 텍스트를 강제로 추출하지 않고, Gemini 모델에 PDF 원본을 직접 전달
+    pdf_part = {
+        "mime_type": "application/pdf",
+        "data": pdf_bytes
+    }
+    
+    response = model.generate_content([prompt, pdf_part])
     return response.text.strip()
 
 # ==========================================
