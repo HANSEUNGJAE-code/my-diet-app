@@ -4,4 +4,4 @@ google-generativeai
 pillow
 gspread
 google-auth
-PyPDF2
+PyMuPDF
