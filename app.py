@@ -68,20 +68,15 @@ def analyze_atflee_pdf(pdf_bytes, api_key):
     2. 출력은 반드시 아래 JSON 형식으로만 반환하세요.
     {"weight": 76.2, "skeletal_muscle": 33.1, "body_fat_percent": 23.1, "visceral_fat": 7, "bmr": 1635}'''
     
-    # 💡 무한 로딩 방지: 임시 파일 생성 후 구글 공식 File API로 안전하게 업로드
+    # 무한 로딩 방지: 임시 파일 생성 후 구글 공식 File API로 안전하게 업로드
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         tmp.write(pdf_bytes)
         tmp_path = tmp.name
 
     try:
-        # Gemini 서버에 PDF 전송
         pdf_file = genai.upload_file(path=tmp_path, mime_type="application/pdf")
-        
-        # 분석 요청
         response = model.generate_content([prompt, pdf_file])
         result = response.text.strip()
-        
-        # 서버 용량 관리를 위해 처리 후 즉시 파기
         genai.delete_file(pdf_file.name)
     finally:
         os.remove(tmp_path)
@@ -349,6 +344,7 @@ if is_new_user:
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.warning("⚠️ 최초 1회 [정밀 대사 진단]을 완료해야 앱 메뉴가 활성화됩니다.")
     menu = "⚙️ 정밀 대사 재진단"
+    p = {}  # 신규 유저 접속 시 NameError가 발생하지 않도록 초기화
 else:
     p = p_df.iloc[0]
     st.sidebar.markdown("### 📌 메뉴 이동")
@@ -844,7 +840,7 @@ elif menu == "📅 달력 조회":
     else:
         for idx, row in logs.iterrows():
             q = str(row['quality'])
-            if "좋은" in q: badge = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 좋은 음식</span>"
+            if "좋" in q: badge = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 좋은 음식</span>"
             elif "주의" in q: badge = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의 음식</span>"
             else: badge = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험 음식</span>"
             
