@@ -8,8 +8,7 @@ from PIL import Image
 import gspread
 from google.oauth2.service_account import Credentials
 import io
-import tempfile
-import os
+import pypdfium2 as pdfium
 
 # ==========================================
 # 0. 🔑 API 키 및 클라우드 인증 금고
@@ -57,31 +56,25 @@ def analyze_food_image(img_bytes, api_key):
 def analyze_atflee_pdf(pdf_bytes, api_key):
     if not api_key: return "{}"
     
+    # 1. pypdfium2를 사용해 PDF 1페이지를 초고속 이미지로 렌더링
+    pdf = pdfium.PdfDocument(pdf_bytes)
+    page = pdf[0]
+    image = page.render(scale=2.0).to_pil()
+    
+    # 2. 음식 사진과 동일한 가장 안정적인 Vision 방식으로 즉시 분석
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(model_name='gemini-3.7-flash', generation_config={"response_mime_type": "application/json"})
     
-    prompt = '''당신은 전문 데이터 분석가입니다. 
-    첨부된 체성분 분석 결과지(PDF)를 시각적, 구조적으로 분석하여 주요 데이터를 찾아 JSON으로 반환하십시오.
+    prompt = '''당신은 전문 체성분 데이터 분석가이자 광학 문자 판독(OCR) 전문가입니다.
+    제공된 체성분 분석표 이미지에서 정확한 수치를 찾아 JSON으로만 반환하십시오.
     
     [절대 행동 지침]
-    1. 숫자만 소수점까지 정확히 추출하세요.
+    1. 체중(weight), 골격근량(skeletal_muscle), 체지방률(body_fat_percent), 내장지방(visceral_fat), 기초대사량(bmr)을 정확히 추출하세요.
     2. 출력은 반드시 아래 JSON 형식으로만 반환하세요.
     {"weight": 76.2, "skeletal_muscle": 33.1, "body_fat_percent": 23.1, "visceral_fat": 7, "bmr": 1635}'''
     
-    # 무한 로딩 방지: 임시 파일 생성 후 구글 공식 File API로 안전하게 업로드
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        tmp.write(pdf_bytes)
-        tmp_path = tmp.name
-
-    try:
-        pdf_file = genai.upload_file(path=tmp_path, mime_type="application/pdf")
-        response = model.generate_content([prompt, pdf_file])
-        result = response.text.strip()
-        genai.delete_file(pdf_file.name)
-    finally:
-        os.remove(tmp_path)
-
-    return result
+    response = model.generate_content([prompt, image])
+    return response.text.strip()
 
 # ==========================================
 # 1. 모바일 최적화 및 직관적 UI CSS
@@ -344,7 +337,7 @@ if is_new_user:
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.warning("⚠️ 최초 1회 [정밀 대사 진단]을 완료해야 앱 메뉴가 활성화됩니다.")
     menu = "⚙️ 정밀 대사 재진단"
-    p = {}  # 신규 유저 접속 시 NameError가 발생하지 않도록 초기화
+    p = {}  # 💡 신규 유저 접속 시 NameError 발생 방지 처리
 else:
     p = p_df.iloc[0]
     st.sidebar.markdown("### 📌 메뉴 이동")
@@ -840,7 +833,7 @@ elif menu == "📅 달력 조회":
     else:
         for idx, row in logs.iterrows():
             q = str(row['quality'])
-            if "좋" in q: badge = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 좋은 음식</span>"
+            if "좋은" in q: badge = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 좋은 음식</span>"
             elif "주의" in q: badge = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의 음식</span>"
             else: badge = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험 음식</span>"
             
