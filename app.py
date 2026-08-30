@@ -29,13 +29,13 @@ def get_gsheet_client():
         return None
 
 # ==========================================
-# AI 캐싱 방어 로직 (무료 한도 보호용)
+# AI 분석 로직 (캐싱 제거, 매번 즉시 호출)
 # ==========================================
-@st.cache_data(show_spinner=False)
 def analyze_food_image(img_bytes, api_key):
     if not api_key: return "{}"
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(model_name='gemini-3.7-flash', generation_config={"response_mime_type": "application/json"})
+    
     prompt = '''당신은 식품 영양 분석 전문가이자 광학 문자 인식(OCR) 시스템입니다.
     사진을 분석하여 아래의 [절대 행동 지침]을 엄격히 준수한 후 JSON으로만 결과를 출력하십시오.
     
@@ -48,20 +48,22 @@ def analyze_food_image(img_bytes, api_key):
     출력 JSON 키 구조:
     {"name": "인식된 메뉴명", "calories": 0, "carb": 0, "protein": 0, "fat": 0, "sugar": 0, "sat_fat": 0, "trans_fat": 0, "sodium": 0, "fiber": 0, "quality": "좋은 음식/주의 음식/위험 음식 중 택 1"}'''
     
+    # 통신 속도 극대화를 위한 해상도 최적화 (업로드 시간 단축용)
     img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+    img.thumbnail((800, 800)) 
+    
     response = model.generate_content([prompt, img])
     return response.text.strip()
 
-@st.cache_data(show_spinner=False)
 def analyze_atflee_pdf(pdf_bytes, api_key):
     if not api_key: return "{}"
     
-    # 1. pypdfium2를 사용해 PDF 1페이지를 초고속 이미지로 렌더링
+    # 통신 속도 극대화를 위한 해상도 최적화 (업로드 시간 단축용)
     pdf = pdfium.PdfDocument(pdf_bytes)
     page = pdf[0]
-    image = page.render(scale=2.0).to_pil()
+    image = page.render(scale=1.2).to_pil()
+    image.thumbnail((800, 800))
     
-    # 2. 음식 사진과 동일한 가장 안정적인 Vision 방식으로 즉시 분석
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(model_name='gemini-3.7-flash', generation_config={"response_mime_type": "application/json"})
     
@@ -337,7 +339,7 @@ if is_new_user:
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.warning("⚠️ 최초 1회 [정밀 대사 진단]을 완료해야 앱 메뉴가 활성화됩니다.")
     menu = "⚙️ 정밀 대사 재진단"
-    p = {}  # 💡 신규 유저 접속 시 NameError 발생 방지 처리
+    p = {}  # 신규 유저 접속 시 NameError가 발생하지 않도록 초기화
 else:
     p = p_df.iloc[0]
     st.sidebar.markdown("### 📌 메뉴 이동")
