@@ -272,7 +272,7 @@ date_display = f"{now.strftime('%y - %m - %d')} ( {wd_map[now.weekday()]} )"
 def safe_get(val, default_val): return val if pd.notna(val) else default_val
 
 # ==========================================
-# 3. 진단 리포트 생성 함수 
+# 3. 진단 리포트 생성 함수 (앳플리 데이터 연동 완비)
 # ==========================================
 def generate_master_feedback(p):
     h = float(safe_get(p.get('height'), 160.0))
@@ -284,7 +284,22 @@ def generate_master_feedback(p):
     act = str(safe_get(p.get('activity_level'), '1단계 (주로 앉아서 생활)'))
     exc = str(safe_get(p.get('exercise_type'), '운동 안 함'))
     
-    bmr = (10 * w) + (6.25 * h) - (5 * a) + (5 if g == "남성" else -161)
+    atflee_bmr = 0
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT bmr FROM daily_weight WHERE bmr > 0 ORDER BY date DESC LIMIT 1")
+        res = cursor.fetchone()
+        if res:
+            atflee_bmr = int(res[0])
+    except:
+        pass
+        
+    if atflee_bmr > 0:
+        bmr = atflee_bmr
+        bmr_source = "앳플리 체성분 분석"
+    else:
+        bmr = (10 * w) + (6.25 * h) - (5 * a) + (5 if g == "남성" else -161)
+        bmr_source = "통계 공식"
     
     base_multi = 1.2
     if "2단계" in act: base_multi = 1.375
@@ -306,7 +321,7 @@ def generate_master_feedback(p):
     carb_g = int((target_cal - (protein_g * 4) - (fat_g * 9)) / 4)
 
     adv = f"<div class='report-title'>📌 Section 1. [ 체성분 및 활동 대사량 산출 ]</div>"
-    adv += f"<div class='report-p'>현재 고객님의 기초대사량은 <b>{int(bmr)} kcal</b>입니다.<br><br><b>[{act}]</b> 활동량과 <b>[{exc}]</b> 훈련 종목을 반영한 일일 총 에너지 소모량(TDEE)은 <b>{int(tdee)} kcal</b>로 분석되었습니다.<br><br>목표 체중({t_w}kg) 도달을 위해 <b>1일 권장 섭취량을 {target_cal} kcal</b>로 설정합니다.</div>"
+    adv += f"<div class='report-p'>현재 고객님의 기초대사량은 <b>{int(bmr)} kcal</b>입니다. <span style='font-size:0.85rem; color:#7F8C8D;'>({bmr_source} 기준)</span><br><br><b>[{act}]</b> 활동량과 <b>[{exc}]</b> 훈련 종목을 반영한 일일 총 에너지 소모량(TDEE)은 <b>{int(tdee)} kcal</b>로 분석되었습니다.<br><br>목표 체중({t_w}kg) 도달을 위해 <b>1일 권장 섭취량을 {target_cal} kcal</b>로 설정합니다.</div>"
     return target_cal, carb_g, protein_g, fat_g, adv
 
 # ==========================================
