@@ -7,6 +7,7 @@ import google.generativeai as genai
 from PIL import Image
 import gspread
 from google.oauth2.service_account import Credentials
+import PyPDF2
 
 # ==========================================
 # 0. 🔑 API 키 및 클라우드 인증 금고
@@ -154,6 +155,23 @@ def init_diet_db():
 
 conn = init_diet_db()
 
+# DB 스키마 마이그레이션 (추가 컬럼)
+c = conn.cursor()
+c.execute("PRAGMA table_info(diet_logs)")
+columns = [col[1] for col in c.fetchall()]
+if "meal_end_time" not in columns:
+    c.execute("ALTER TABLE diet_logs ADD COLUMN meal_end_time TEXT")
+    conn.commit()
+
+c.execute("PRAGMA table_info(daily_weight)")
+dw_columns = [col[1] for col in c.fetchall()]
+if "skeletal_muscle" not in dw_columns:
+    c.execute("ALTER TABLE daily_weight ADD COLUMN skeletal_muscle REAL DEFAULT 0.0")
+    c.execute("ALTER TABLE daily_weight ADD COLUMN body_fat_percent REAL DEFAULT 0.0")
+    c.execute("ALTER TABLE daily_weight ADD COLUMN visceral_fat INTEGER DEFAULT 0")
+    c.execute("ALTER TABLE daily_weight ADD COLUMN bmr INTEGER DEFAULT 0")
+    conn.commit()
+
 def sync_from_sheets(conn):
     client = get_gsheet_client()
     if not client: return False
@@ -194,7 +212,6 @@ def commit_and_sync(conn, table_names=None):
             if not df.empty:
                 clean_df = df.fillna("").astype(str).replace(["nan", "NaN", "None", "<NA>"], "")
                 data = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
-                
                 try:
                     ws.update(values=data, range_name='A1')
                 except Exception as e:
@@ -205,13 +222,6 @@ if 'db_synced' not in st.session_state:
     with st.spinner("☁️ 클라우드 데이터베이스와 안전하게 동기화 중입니다..."):
         sync_from_sheets(conn)
         st.session_state.db_synced = True
-
-c = conn.cursor()
-c.execute("PRAGMA table_info(diet_logs)")
-columns = [col[1] for col in c.fetchall()]
-if "meal_end_time" not in columns:
-    c.execute("ALTER TABLE diet_logs ADD COLUMN meal_end_time TEXT")
-    conn.commit()
 
 now = datetime.utcnow() + timedelta(hours=9)
 today_str = now.strftime("%Y-%m-%d")
@@ -232,21 +242,6 @@ def generate_master_feedback(p):
     
     act = str(safe_get(p.get('activity_level'), '1단계 (주로 앉아서 생활)'))
     exc = str(safe_get(p.get('exercise_type'), '운동 안 함'))
-    meal_cnt = str(safe_get(p.get('meal_count'), '3끼'))
-    carb = str(safe_get(p.get('carb_type'), '다이어트 정식'))
-    snack = str(safe_get(p.get('snack_type'), '안 먹음'))
-    snack_freq = str(safe_get(p.get('snack_freq'), '안 먹음'))
-    snack_time = str(safe_get(p.get('snack_time'), '없음'))
-    snack_amt = str(safe_get(p.get('snack_amt'), '없음'))
-    bed_hr = str(safe_get(p.get('sleep_bed_hr'), '23:30'))
-    wake_hr = str(safe_get(p.get('sleep_wake_hr'), '07:00'))
-    f_hr = str(safe_get(p.get('first_meal_hr'), '08:00'))
-    l_hr = str(safe_get(p.get('last_meal_hr'), '19:00'))
-    w_unit = str(safe_get(p.get('water_unit'), '잔'))
-    w_cnt = float(safe_get(p.get('water_cnt'), 8.0))
-    b_type = str(safe_get(p.get('bev_type'), '안 마심'))
-    b_unit = str(safe_get(p.get('bev_unit'), '작은 캔'))
-    b_cnt = float(safe_get(p.get('bev_cnt'), 1.0))
     
     h_m = h / 100
     bmr = (10 * w) + (6.25 * h) - (5 * a) + (5 if g == "남성" else -161)
@@ -296,10 +291,6 @@ else:
 # ==========================================
 # 5. 페이지 렌더링
 # ==========================================
-
-# ------------------------------------------
-# [메뉴 1] 일일 기록 (기본 화면) 
-# ------------------------------------------
 if menu == "📝 일일 기록 (메인)":
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='date-display'>{date_display}</div>", unsafe_allow_html=True)
@@ -378,27 +369,19 @@ if menu == "📝 일일 기록 (메인)":
                         with st.spinner("AI가 시각적 형태보다 텍스트(OCR)를 최우선으로 정밀 판독 중입니다..."):
                             try:
                                 genai.configure(api_key=GEMINI_API_KEY)
-                                
-                                generation_config = {
-                                    "response_mime_type": "application/json"
-                                }
-                                
-                                model = genai.GenerativeModel(
-                                    model_name='gemini-3.7-flash',
-                                    generation_config=generation_config
-                                )
+                                model = genai.GenerativeModel(model_name='gemini-3.7-flash', generation_config={"response_mime_type": "application/json"})
                                 
                                 prompt = '''당신은 식품 영양 분석 전문가이자 광학 문자 인식(OCR) 시스템입니다.
                                 사진을 분석하여 아래의 [절대 행동 지침]을 엄격히 준수한 후 JSON으로만 결과를 출력하십시오.
-
+                                
                                 [절대 행동 지침]
-                                1. 텍스트 판독(OCR) 최우선: 사진 내에 제품명, 원재료명, 영양성분표 등의 글자가 있다면 시각적 형태나 색상(예: 붉은 양념)보다 글자를 무조건 1순위 팩트로 신뢰하십시오.
-                                2. 시각적 착시 및 추측 금지: 글자 판독이 불가능한 경우에만 시각적 추론을 사용하되, 붉은 닭가슴살을 연어로 오인하는 등의 상상력을 배제하고 가장 보편적인 식재료로 보수적으로 판단하십시오.
-                                3. 객관적 영양 수치 매핑: 판독된 정확한 제품명 또는 메뉴를 바탕으로, 시중의 표준 영양성분 데이터베이스에 가장 근접한 수치를 입력하십시오. 알 수 없는 수치는 0으로 처리하십시오.
-                                4. 출력 형식: 마크다운 기호 없이 순수 JSON 포맷만 반환하십시오.
-
+                                1. 텍스트 판독(OCR) 최우선: 사진 내에 제품명, 원재료명, 영양성분표 등의 글자가 있다면 시각적 형태나 색상보다 글자를 무조건 1순위 팩트로 신뢰하십시오.
+                                2. 시각적 착시 및 추측 금지: 글자 판독이 불가능한 경우에만 시각적 추론을 사용하되 가장 보편적인 식재료로 보수적으로 판단하십시오.
+                                3. 객관적 영양 수치 매핑: 판독된 정확한 제품명 또는 메뉴를 바탕으로, 시중의 표준 데이터베이스에 근접한 수치를 입력하십시오. 알 수 없는 수치는 0처리.
+                                4. 출력 형식: 마크다운 기호 없이 순수 JSON 포맷만 반환.
+                                
                                 출력 JSON 키 구조:
-                                {"name": "인식된 정확한 제품명 또는 메뉴명", "calories": 0, "carb": 0, "protein": 0, "fat": 0, "sugar": 0, "sat_fat": 0, "trans_fat": 0, "sodium": 0, "fiber": 0, "quality": "좋은 음식/주의 음식/위험 음식 중 택 1"}'''
+                                {"name": "인식된 메뉴명", "calories": 0, "carb": 0, "protein": 0, "fat": 0, "sugar": 0, "sat_fat": 0, "trans_fat": 0, "sodium": 0, "fiber": 0, "quality": "좋은 음식/주의 음식/위험 음식 중 택 1"}'''
                                 
                                 img = Image.open(uploaded_file).convert('RGB')
                                 response = model.generate_content([prompt, img])
@@ -500,7 +483,7 @@ if menu == "📝 일일 기록 (메인)":
                 st.rerun()
                 
         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
-        st.markdown("##### ☕ 음료 카테고 누적")
+        st.markdown("##### ☕ 음료 카테고리 누적")
         selected_b_name = st.selectbox("마신 음료 분류 선택", BEV_CATEGORIES)
         
         b_df = pd.read_sql(f"SELECT * FROM beverage_logs WHERE date='{today_str}' AND bev_name='{selected_b_name}'", conn)
@@ -618,27 +601,96 @@ if menu == "📝 일일 기록 (메인)":
                 except ValueError: st.error("숫자만 입력해주세요.")
 
     with tabs[3]:
-        st.markdown("##### 📉 오늘의 체중 입력")
-        curr_w_df = pd.read_sql(f"SELECT weight FROM daily_weight WHERE date='{today_str}'", conn)
-        default_w = str(curr_w_df.iloc[0]['weight']) if not curr_w_df.empty else str(p.get('weight', 60.0))
+        st.markdown("##### 📉 오늘의 체성분 입력 (PDF 연동)")
+        st.info("💡 **앳플리(Atflee) 체성분 PDF 결과지**를 업로드하면 상세 데이터를 자동 기록합니다.")
+        
+        pdf_file = st.file_uploader("PDF 파일 업로드 (iOS 파일 앱 연동)", type=['pdf'], label_visibility="collapsed")
+        
+        if pdf_file is not None:
+            if st.button("🔍 AI 체성분 데이터 자동 추출"):
+                if not GEMINI_API_KEY: 
+                    st.error("API 금고가 비어있습니다.")
+                else:
+                    with st.spinner("AI가 PDF에서 체성분 데이터를 정밀 판독 중입니다..."):
+                        try:
+                            pdf_reader = PyPDF2.PdfReader(pdf_file)
+                            pdf_text = "".join(page.extract_text() for page in pdf_reader.pages)
+                            
+                            genai.configure(api_key=GEMINI_API_KEY)
+                            model = genai.GenerativeModel(model_name='gemini-3.7-flash', generation_config={"response_mime_type": "application/json"})
+                            
+                            prompt = f'''당신은 텍스트 데이터 분석 전문가입니다. 
+                            아래 제공된 체성분 분석 결과지 텍스트에서 주요 데이터를 찾아 JSON으로 반환하십시오.
+                            
+                            [절대 행동 지침]
+                            1. 숫자만 소수점까지 정확히 추출하세요.
+                            2. 출력은 반드시 아래 JSON 형식으로만 반환하세요.
+                            {{"weight": 76.2, "skeletal_muscle": 33.1, "body_fat_percent": 23.1, "visceral_fat": 7, "bmr": 1635}}
+                            
+                            [PDF 텍스트 데이터]
+                            {pdf_text}'''
+                            
+                            resp = model.generate_content(prompt)
+                            res_txt = resp.text.strip()
+                            
+                            s_idx, e_idx = res_txt.find('{'), res_txt.rfind('}')
+                            if s_idx != -1 and e_idx != -1:
+                                w_data = json.loads(res_txt[s_idx:e_idx+1])
+                                st.session_state.ai_weight = float(w_data.get("weight", 0.0))
+                                st.session_state.ai_muscle = float(w_data.get("skeletal_muscle", 0.0))
+                                st.session_state.ai_fat_pct = float(w_data.get("body_fat_percent", 0.0))
+                                st.session_state.ai_visceral_fat = int(w_data.get("visceral_fat", 0))
+                                st.session_state.ai_bmr = int(w_data.get("bmr", 0))
+                                st.success(f"✅ 추출 완료! (체중: {st.session_state.ai_weight}kg | 골격근량: {st.session_state.ai_muscle}kg | 체지방률: {st.session_state.ai_fat_pct}%)")
+                            else:
+                                st.error("데이터를 명확히 찾지 못했습니다.")
+                        except Exception as e:
+                            st.error(f"통신 또는 파싱 에러: {e}")
+
+        # DB에서 기존 값 불러오기 및 기본값 세팅
+        curr_w_df = pd.read_sql(f"SELECT * FROM daily_weight WHERE date='{today_str}'", conn)
+        
+        default_w = str(st.session_state.ai_weight) if st.session_state.get('ai_weight') else (str(curr_w_df.iloc[0]['weight']) if not curr_w_df.empty else str(p.get('weight', 60.0)))
+        default_m = str(st.session_state.ai_muscle) if st.session_state.get('ai_muscle') else (str(curr_w_df.iloc[0]['skeletal_muscle']) if not curr_w_df.empty and 'skeletal_muscle' in curr_w_df.columns else "0.0")
+        default_f = str(st.session_state.ai_fat_pct) if st.session_state.get('ai_fat_pct') else (str(curr_w_df.iloc[0]['body_fat_percent']) if not curr_w_df.empty and 'body_fat_percent' in curr_w_df.columns else "0.0")
+        default_v = str(st.session_state.ai_visceral_fat) if st.session_state.get('ai_visceral_fat') else (str(curr_w_df.iloc[0]['visceral_fat']) if not curr_w_df.empty and 'visceral_fat' in curr_w_df.columns else "0")
+        default_bmr = str(st.session_state.ai_bmr) if st.session_state.get('ai_bmr') else (str(curr_w_df.iloc[0]['bmr']) if not curr_w_df.empty and 'bmr' in curr_w_df.columns else "0")
         
         with st.form("weight_form_main"):
-            today_w_str = st.text_input("체중 (kg)", value=default_w)
-            if st.form_submit_button("로컬 데이터베이스 업데이트"):
+            c1, c2, c3 = st.columns(3)
+            with c1: today_w_str = st.text_input("체중 (kg)", value=default_w)
+            with c2: muscle_str = st.text_input("골격근량 (kg)", value=default_m)
+            with c3: fat_pct_str = st.text_input("체지방률 (%)", value=default_f)
+            
+            c4, c5 = st.columns(2)
+            with c4: vf_str = st.text_input("내장지방지수", value=default_v)
+            with c5: bmr_str = st.text_input("기초대사량 (kcal)", value=default_bmr)
+            
+            if st.form_submit_button("로컬 데이터베이스 업데이트", type="primary"):
                 try:
-                    today_w = float(today_w_str)
+                    t_w, t_m, t_f = float(today_w_str), float(muscle_str), float(fat_pct_str)
+                    t_v, t_bmr = int(vf_str), int(bmr_str)
+                    
                     c.execute(f"SELECT id FROM daily_weight WHERE date='{today_str}'")
                     if c.fetchone():
-                        c.execute(f"UPDATE daily_weight SET weight = {today_w} WHERE date='{today_str}'")
+                        c.execute(f"UPDATE daily_weight SET weight={t_w}, skeletal_muscle={t_m}, body_fat_percent={t_f}, visceral_fat={t_v}, bmr={t_bmr} WHERE date='{today_str}'")
                     else:
-                        c.execute(f"INSERT INTO daily_weight (date, weight) VALUES ('{today_str}', {today_w})")
+                        c.execute(f"INSERT INTO daily_weight (date, weight, skeletal_muscle, body_fat_percent, visceral_fat, bmr) VALUES ('{today_str}', {t_w}, {t_m}, {t_f}, {t_v}, {t_bmr})")
                         
                     if not is_new_user:
-                        c.execute(f"UPDATE user_profile SET weight = {today_w} WHERE id = {p['id']}")
+                        c.execute(f"UPDATE user_profile SET weight = {t_w} WHERE id = {p['id']}")
+                        
                     conn.commit()
                     commit_and_sync(conn, ['daily_weight', 'user_profile'])
-                    st.success("클라우드에 안전하게 저장되었습니다.")
-                except ValueError: st.error("숫자만 입력해주세요.")
+                    
+                    # 저장 성공 시 AI 추출 임시 데이터 초기화
+                    for k in ['ai_weight', 'ai_muscle', 'ai_fat_pct', 'ai_visceral_fat', 'ai_bmr']:
+                        if k in st.session_state: del st.session_state[k]
+                        
+                    st.success("☁️ 체성분 데이터가 클라우드에 안전하게 저장되었습니다.")
+                    st.rerun()
+                except ValueError: 
+                    st.error("숫자만 입력해주세요.")
 
     if len(tabs) == 5: 
         with tabs[4]:
@@ -654,9 +706,6 @@ if menu == "📝 일일 기록 (메인)":
                         st.success("저장 완료.")
                     except ValueError: st.error("날짜 형식을 맞춰주세요.")
 
-# ------------------------------------------
-# [메뉴 2] 📅 달력 조회 (데이터베이스 통합본)
-# ------------------------------------------
 elif menu == "📅 달력 조회":
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     
@@ -707,9 +756,6 @@ elif menu == "📅 달력 조회":
         logs = pd.DataFrame()
         e_cal, e_c, e_p, e_f, e_sodium, e_fiber = 0, 0, 0, 0, 0, 0
         
-    # ==========================================
-    # [수정된 부분] 음료(액상) 칼로리 및 탄수화물/당류 강제 합산 로직
-    # ==========================================
     bev_df = pd.read_sql(f"SELECT * FROM beverage_logs WHERE date='{view_date_str}'", conn)
     
     for idx, b_row in bev_df.iterrows():
@@ -717,12 +763,10 @@ elif menu == "📅 달력 조회":
         calc_b_amt = b_row['amount']
         calc_b_un = b_row['unit']
         
-        # 1. 단위별 용량 배수 산출 (100ml 기준)
         if calc_b_un == "작은 캔": vol_multi = 2.5
         elif calc_b_un == "큰 캔": vol_multi = 3.55
         else: vol_multi = 2.0
         
-        # 2. 카테고리별 100ml당 평균 칼로리(kcal) 및 탄수화물(g) 매핑
         if calc_b_name in ["일반 탄산음료 (콜라, 사이다)", "과일 주스 / 스무디", "기타 당류 포함 액상"]:
             k_per_100, c_per_100 = 45, 11
         elif calc_b_name == "달콤한 커피류 (믹스커피, 바닐라라떼 등)":
@@ -731,13 +775,11 @@ elif menu == "📅 달력 조회":
             k_per_100, c_per_100 = 80, 10
         elif calc_b_name in ["단백질 보충 액상", "일반 우유 / 무가당 두유"]:
             k_per_100, c_per_100 = 50, 5 
-        else: # 아메리카노, 제로콜라, 차류 등 (칼로리 무의미한 수준)
+        else: 
             k_per_100, c_per_100 = 0, 0
             
-        # 3. 메인 변수에 누적 합산
         e_cal += (k_per_100 * vol_multi * calc_b_amt)
         e_c += (c_per_100 * vol_multi * calc_b_amt)
-    # ==========================================
     
     diff_cal = t_cal - e_cal
     cal_class = "status-green" if diff_cal >= 0 else "status-red"
@@ -859,9 +901,6 @@ elif menu == "📅 달력 조회":
             w_msg = f"생수 {w_amt}{w_un} 섭취 완료. " + ("수분 대사 원활." if w_amt >= target_water else "수분 부족.")
             habit_table += f"<tr><td><b>수분</b></td><td>{w_badge}</td><td style='text-align:left; font-size:0.85rem;'>{w_msg}</td></tr>"
 
-    # ==========================================
-    # [수정된 부분] 음료 피드백 카테고리별 디테일 로직
-    # ==========================================
     for idx, b_row in bev_df.iterrows():
         b_name, b_amt, b_un = b_row['bev_name'], b_row['amount'], b_row['unit']
         
@@ -881,11 +920,12 @@ elif menu == "📅 달력 조회":
             b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 액상과당은 인슐린을 급격히 분비시켜 체지방 연소 모드를 즉시 중단시킵니다."
 
         habit_table += f"<tr><td><b>음료</b><br><span style='font-size:0.7rem; color:#7F8C8D;'>{b_name}</span></td><td>{b_badge}</td><td style='text-align:left; font-size:0.85rem;'>{b_msg}</td></tr>"
-    # ==========================================
     
-    w_hist_df = pd.read_sql(f"SELECT weight FROM daily_weight WHERE date='{view_date_str}'", conn)
+    w_hist_df = pd.read_sql(f"SELECT * FROM daily_weight WHERE date='{view_date_str}'", conn)
     if not w_hist_df.empty:
         day_w = w_hist_df.iloc[0]['weight']
+        day_m = w_hist_df.iloc[0]['skeletal_muscle'] if 'skeletal_muscle' in w_hist_df.columns else 0
+        day_f = w_hist_df.iloc[0]['body_fat_percent'] if 'body_fat_percent' in w_hist_df.columns else 0
         
         prev_w_df = pd.read_sql(f"SELECT weight FROM daily_weight WHERE date < '{view_date_str}' ORDER BY date DESC LIMIT 1", conn)
         
@@ -909,6 +949,9 @@ elif menu == "📅 달력 조회":
             w_badge = "<span class='badge' style='background:#F2F3F4; color:#2C3E50;'>기록 시작</span>"
             w_msg = "비교할 전일 데이터가 없습니다. 내일부터 일일 변화량 및 전문 피드백이 제공됩니다."
             w_disp = f"{day_w}kg"
+            
+        if day_m > 0 and day_f > 0:
+            w_msg += f"<br><span style='color:#34495E;'>골격근량: {day_m}kg | 체지방률: {day_f}%</span>"
 
         habit_table += f"<tr><td><b>체중</b></td><td>{w_badge}</td><td style='text-align:left; font-size:0.85rem;'><b>{w_disp}</b><br><span style='color:#7F8C8D;'>{w_msg}</span></td></tr>"
     
@@ -918,18 +961,12 @@ elif menu == "📅 달력 조회":
     else:
         st.markdown(habit_table, unsafe_allow_html=True)
 
-# ------------------------------------------
-# [메뉴 3] 대사 진단 리포트
-# ------------------------------------------
 elif menu == "📋 대사 진단 리포트":
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown("### 📋 정밀 대사 진단 리포트")
     _, _, _, _, f_text = generate_master_feedback(p)
     st.markdown(f"<div class='report-box'>{f_text}</div>", unsafe_allow_html=True)
 
-# ------------------------------------------
-# [메뉴 4] 정밀 대사 재진단
-# ------------------------------------------
 elif menu == "⚙️ 정밀 대사 재진단":
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown("### ⚙️ 20개 변수 기반 정밀 대사 진단")
