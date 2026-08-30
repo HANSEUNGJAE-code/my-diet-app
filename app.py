@@ -8,6 +8,8 @@ from PIL import Image
 import gspread
 from google.oauth2.service_account import Credentials
 import io
+import tempfile
+import os
 
 # ==========================================
 # 0. 🔑 API 키 및 클라우드 인증 금고
@@ -66,14 +68,25 @@ def analyze_atflee_pdf(pdf_bytes, api_key):
     2. 출력은 반드시 아래 JSON 형식으로만 반환하세요.
     {"weight": 76.2, "skeletal_muscle": 33.1, "body_fat_percent": 23.1, "visceral_fat": 7, "bmr": 1635}'''
     
-    # 💡 텍스트를 강제로 추출하지 않고, Gemini 모델에 PDF 원본을 직접 전달
-    pdf_part = {
-        "mime_type": "application/pdf",
-        "data": pdf_bytes
-    }
-    
-    response = model.generate_content([prompt, pdf_part])
-    return response.text.strip()
+    # 💡 무한 로딩 방지: 임시 파일 생성 후 구글 공식 File API로 안전하게 업로드
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(pdf_bytes)
+        tmp_path = tmp.name
+
+    try:
+        # Gemini 서버에 PDF 전송
+        pdf_file = genai.upload_file(path=tmp_path, mime_type="application/pdf")
+        
+        # 분석 요청
+        response = model.generate_content([prompt, pdf_file])
+        result = response.text.strip()
+        
+        # 서버 용량 관리를 위해 처리 후 즉시 파기
+        genai.delete_file(pdf_file.name)
+    finally:
+        os.remove(tmp_path)
+
+    return result
 
 # ==========================================
 # 1. 모바일 최적화 및 직관적 UI CSS
