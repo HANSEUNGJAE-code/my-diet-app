@@ -29,7 +29,7 @@ def get_gsheet_client():
         return None
 
 # ==========================================
-# AI 분석 로직 (캐싱 제거, 매번 즉시 호출)
+# AI 분석 로직 (캐싱 제거, JPEG 고속 압축 전송 적용)
 # ==========================================
 def analyze_food_image(img_bytes, api_key):
     if not api_key: return "{}"
@@ -48,21 +48,29 @@ def analyze_food_image(img_bytes, api_key):
     출력 JSON 키 구조:
     {"name": "인식된 메뉴명", "calories": 0, "carb": 0, "protein": 0, "fat": 0, "sugar": 0, "sat_fat": 0, "trans_fat": 0, "sodium": 0, "fiber": 0, "quality": "좋은 음식/주의 음식/위험 음식 중 택 1"}'''
     
-    # 통신 속도 극대화를 위한 해상도 최적화 (업로드 시간 단축용)
+    # 정확도 유지를 위해 해상도 1200 보장, 무거운 PNG 변환을 막고 JPEG 바이너리로 강제 인코딩
     img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
-    img.thumbnail((800, 800)) 
+    img.thumbnail((1200, 1200))
     
-    response = model.generate_content([prompt, img])
+    img_buffer = io.BytesIO()
+    img.save(img_buffer, format="JPEG", quality=85)
+    jpeg_part = {"mime_type": "image/jpeg", "data": img_buffer.getvalue()}
+    
+    response = model.generate_content([prompt, jpeg_part])
     return response.text.strip()
 
 def analyze_atflee_pdf(pdf_bytes, api_key):
     if not api_key: return "{}"
     
-    # 통신 속도 극대화를 위한 해상도 최적화 (업로드 시간 단축용)
+    # 정확도를 위해 렌더링 스케일 2.0 (초고화질) 적용 후 JPEG 바이너리 압축
     pdf = pdfium.PdfDocument(pdf_bytes)
     page = pdf[0]
-    image = page.render(scale=1.2).to_pil()
-    image.thumbnail((800, 800))
+    img = page.render(scale=2.0).to_pil().convert('RGB')
+    
+    img.thumbnail((1500, 1500))
+    img_buffer = io.BytesIO()
+    img.save(img_buffer, format="JPEG", quality=85)
+    jpeg_part = {"mime_type": "image/jpeg", "data": img_buffer.getvalue()}
     
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(model_name='gemini-3.7-flash', generation_config={"response_mime_type": "application/json"})
@@ -75,7 +83,7 @@ def analyze_atflee_pdf(pdf_bytes, api_key):
     2. 출력은 반드시 아래 JSON 형식으로만 반환하세요.
     {"weight": 76.2, "skeletal_muscle": 33.1, "body_fat_percent": 23.1, "visceral_fat": 7, "bmr": 1635}'''
     
-    response = model.generate_content([prompt, image])
+    response = model.generate_content([prompt, jpeg_part])
     return response.text.strip()
 
 # ==========================================
