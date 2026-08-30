@@ -174,11 +174,11 @@ st.markdown("""
     
     .micro-box { background-color:#FDFEFE; padding:10px; border-radius:8px; border:1px dashed #BDC3C7; text-align:center; font-size:0.9rem; color:#34495E; margin-bottom: 20px;}
     
-    /* 테이블 모바일 최적화 (글씨 잘림 방지) */
-    .diet-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    /* 테이블 모바일 최적화 (강제 넓이 고정 해제) */
+    .diet-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     .diet-table th { background-color: #34495E; color: white; padding: 10px 4px; text-align: center; font-weight: 800; font-size: 0.9rem; word-break: keep-all;}
-    .diet-table td { padding: 12px 4px; text-align: center; border-bottom: 1px solid #E5E7E9; vertical-align: middle; background-color: white; word-break: keep-all; overflow-wrap: break-word; white-space: normal; line-height: 1.5;}
-    .badge { padding: 4px 8px; border-radius: 6px; font-weight: 900; font-size: 0.85rem; white-space: nowrap;}
+    .diet-table td { padding: 12px 4px; text-align: center; border-bottom: 1px solid #E5E7E9; vertical-align: middle; background-color: white; line-height: 1.5;}
+    .badge { padding: 4px 8px; border-radius: 6px; font-weight: 900; font-size: 0.85rem; white-space: nowrap; display: inline-block;}
     
     h1 { font-size: 1.65rem !important; font-weight: 900 !important; color: #2C3E50; text-align: center; margin-bottom: 5px; white-space: nowrap; letter-spacing: -0.5px;}
     .date-display { text-align:center; font-size:1.15rem; font-weight:900; color:#7F8C8D; margin-bottom:20px; }
@@ -665,6 +665,12 @@ if menu == "📝 일일 기록 (메인)":
 
     with tabs[3]:
         st.markdown("##### 📉 오늘의 체성분 입력 (PDF 연동)")
+        
+        # 💡 성공 알림을 폼 최상단으로 끌어올려 화면에서 가장 먼저 보이게 수정
+        if st.session_state.get("weight_save_success"):
+            st.success("✅ ☁️ 체성분 데이터가 클라우드 및 로컬에 완벽하게 저장되었습니다!")
+            st.session_state.weight_save_success = False
+
         st.info("💡 **앳플리(Atflee) 체성분 PDF 결과지**를 업로드하면 상세 데이터를 자동 기록합니다.")
         
         pdf_file = st.file_uploader("PDF 파일 업로드 (iOS 파일 앱 연동)", type=['pdf'], label_visibility="collapsed")
@@ -703,7 +709,7 @@ if menu == "📝 일일 기록 (메인)":
         
         with st.form("weight_form_main"):
             c1, c2, c3 = st.columns(3)
-            with c1: today_w_str = st.text_input("체중 (kg)", value=default_w)
+            with c1: today_w_str = text_input_w = st.text_input("체중 (kg)", value=default_w)
             with c2: muscle_str = st.text_input("골격근량 (kg)", value=default_m)
             with c3: fat_pct_str = st.text_input("체지방률 (%)", value=default_f)
             
@@ -731,16 +737,11 @@ if menu == "📝 일일 기록 (메인)":
                     for k in ['ai_weight', 'ai_muscle', 'ai_fat_pct', 'ai_visceral_fat', 'ai_bmr']:
                         if k in st.session_state: del st.session_state[k]
                         
-                    # 💡 성공 메시지가 덮어씌워지지 않도록 세션 스테이트에 저장 후 리런
+                    # 💡 성공 처리 후 다시 렌더링되게 하여 최상단에 메시지를 노출
                     st.session_state.weight_save_success = True
                     st.rerun()
                 except ValueError: 
                     st.error("숫자만 입력해주세요.")
-
-        # 💡 리런 된 이후 폼 바깥에서 즉각 피드백 노출
-        if st.session_state.get("weight_save_success"):
-            st.success("✅ ☁️ 체성분 데이터가 안전하게 저장되었습니다!")
-            st.session_state.weight_save_success = False
 
     if len(tabs) == 5: 
         with tabs[4]:
@@ -923,8 +924,8 @@ elif menu == "📅 달력 조회":
     st.markdown("##### 📋 습관 및 체중 피드백")
     habit_df = pd.read_sql(f"SELECT * FROM daily_habits WHERE date='{view_date_str}'", conn)
     
-    # 💡 텍스트 잘림을 방지하기 위해 열 너비 비율 최적화
-    habit_table = "<table class='diet-table'><tr><th style='width:18%;'>항목</th><th style='width:22%;'>상태</th><th style='width:60%;'>전문가 피드백</th></tr>"
+    # 💡 뱃지 잘림 방지를 위해 너비 비율을 재조정하고 텍스트 줄바꿈을 유연하게 처리
+    habit_table = "<table class='diet-table'><tr><th style='width:20%;'>항목</th><th style='width:25%;'>상태</th><th style='width:55%;'>전문가 피드백</th></tr>"
     
     if not habit_df.empty:
         h_row = habit_df.iloc[0]
@@ -1001,8 +1002,9 @@ elif menu == "📅 달력 조회":
             w_msg = "비교할 전일 데이터가 없습니다. 내일부터 일일 변화량 및 전문 피드백이 제공됩니다."
             w_disp = f"{day_w}kg"
             
+        # 💡 요청하신 대로 줄바꿈 코드를 명시적으로 추가하여 깔끔하게 정리
         if day_m > 0 and day_f > 0:
-            w_msg += f"<br><span style='color:#34495E;'>골격근량: {day_m}kg | 체지방률: {day_f}%</span>"
+            w_msg += f"<br><div style='margin-top:6px; padding-top:6px; border-top:1px dashed #E5E7E9;'><span style='color:#34495E; font-weight:600;'>골격근량: {day_m}kg<br>체지방률: {day_f}%</span></div>"
 
         habit_table += f"<tr><td><b>체중</b></td><td>{w_badge}</td><td style='text-align:left; font-size:0.85rem;'><b>{w_disp}</b><br><span style='color:#7F8C8D;'>{w_msg}</span></td></tr>"
     
