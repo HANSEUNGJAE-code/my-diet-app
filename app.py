@@ -7,7 +7,7 @@ import google.generativeai as genai
 from PIL import Image
 import gspread
 from google.oauth2.service_account import Credentials
-import PyPDF2
+import fitz  # PyPDF2 대신 고속 추출을 위한 PyMuPDF 사용
 import io
 
 # ==========================================
@@ -55,8 +55,10 @@ def analyze_food_image(img_bytes, api_key):
 @st.cache_data(show_spinner=False)
 def analyze_atflee_pdf(pdf_bytes, api_key):
     if not api_key: return "{}"
-    pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
-    pdf_text = "".join(page.extract_text() for page in pdf_reader.pages)
+    
+    # 텍스트 추출 병목 해결을 위해 PyMuPDF(fitz) 적용
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    pdf_text = "".join(page.get_text() for page in doc)
     
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(model_name='gemini-3.7-flash', generation_config={"response_mime_type": "application/json"})
