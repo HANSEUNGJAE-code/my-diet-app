@@ -29,7 +29,7 @@ def get_gsheet_client():
         return None
 
 # ==========================================
-# AI 분석 로직 (3.5 Flash-Lite + 고속 JPEG 압축 전송)
+# AI 분석 로직 (3.5 Flash-Lite + 고속 JPEG 압축 및 버그 방지)
 # ==========================================
 def analyze_food_image(img_bytes, api_key):
     if not api_key: return "{}"
@@ -39,16 +39,13 @@ def analyze_food_image(img_bytes, api_key):
     img.thumbnail((800, 800))
     img_buffer = io.BytesIO()
     img.save(img_buffer, format="JPEG", quality=85)
+    img_buffer.seek(0)
     
-    # 2. 순수 바이트 딕셔너리로 구성
-    jpeg_part = {
-        "mime_type": "image/jpeg",
-        "data": img_buffer.getvalue()
-    }
+    # 2. 딕셔너리(jpeg_part) 대신 PIL 객체로 다시 감싸서 무한 로딩 버그 원천 차단
+    optimized_img = Image.open(img_buffer)
     
     genai.configure(api_key=api_key)
     
-    # 💡 속도 최적화: 가장 빠른 Lite 모델 사용 및 무작위성(temperature) 0.0 설정
     model = genai.GenerativeModel(
         model_name='gemini-3.5-flash-lite', 
         generation_config={"response_mime_type": "application/json", "temperature": 0.0}
@@ -66,7 +63,7 @@ def analyze_food_image(img_bytes, api_key):
     출력 JSON 키 구조:
     {"name": "인식된 메뉴명", "calories": 0, "carb": 0, "protein": 0, "fat": 0, "sugar": 0, "sat_fat": 0, "trans_fat": 0, "sodium": 0, "fiber": 0, "quality": "좋은 음식/주의 음식/위험 음식 중 택 1"}'''
     
-    response = model.generate_content([prompt, jpeg_part])
+    response = model.generate_content([prompt, optimized_img])
     return response.text.strip()
 
 def analyze_atflee_pdf(pdf_bytes, api_key):
@@ -79,16 +76,13 @@ def analyze_atflee_pdf(pdf_bytes, api_key):
     img.thumbnail((1200, 1200))
     img_buffer = io.BytesIO()
     img.save(img_buffer, format="JPEG", quality=85)
+    img_buffer.seek(0)
     
-    # 2. 순수 바이트 딕셔너리로 구성
-    jpeg_part = {
-        "mime_type": "image/jpeg",
-        "data": img_buffer.getvalue()
-    }
+    # 2. 딕셔너리 대신 PIL 객체로 다시 감싸서 무한 로딩 버그 원천 차단
+    optimized_img = Image.open(img_buffer)
     
     genai.configure(api_key=api_key)
     
-    # 💡 속도 최적화: 가장 빠른 Lite 모델 사용 및 무작위성(temperature) 0.0 설정
     model = genai.GenerativeModel(
         model_name='gemini-3.5-flash-lite', 
         generation_config={"response_mime_type": "application/json", "temperature": 0.0}
@@ -102,7 +96,7 @@ def analyze_atflee_pdf(pdf_bytes, api_key):
     2. 출력은 반드시 아래 JSON 형식으로만 반환하세요.
     {"weight": 76.2, "skeletal_muscle": 33.1, "body_fat_percent": 23.1, "visceral_fat": 7, "bmr": 1635}'''
     
-    response = model.generate_content([prompt, jpeg_part])
+    response = model.generate_content([prompt, optimized_img])
     return response.text.strip()
 
 # ==========================================
@@ -366,7 +360,7 @@ if is_new_user:
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.warning("⚠️ 최초 1회 [정밀 대사 진단]을 완료해야 앱 메뉴가 활성화됩니다.")
     menu = "⚙️ 정밀 대사 재진단"
-    p = {}  # 신규 유저 접속 시 NameError가 발생하지 않도록 초기화
+    p = {}  
 else:
     p = p_df.iloc[0]
     st.sidebar.markdown("### 📌 메뉴 이동")
