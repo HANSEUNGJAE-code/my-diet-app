@@ -8,6 +8,7 @@ from PIL import Image
 import gspread
 from google.oauth2.service_account import Credentials
 import PyPDF2
+import io
 
 # ==========================================
 # 0. 🔑 API 키 및 클라우드 인증 금고
@@ -26,6 +27,51 @@ def get_gsheet_client():
         return gspread.authorize(creds)
     except:
         return None
+
+# ==========================================
+# AI 캐싱 방어 로직 (무료 한도 보호용)
+# ==========================================
+@st.cache_data(show_spinner=False)
+def analyze_food_image(img_bytes, api_key):
+    if not api_key: return "{}"
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name='gemini-3.7-flash', generation_config={"response_mime_type": "application/json"})
+    prompt = '''당신은 식품 영양 분석 전문가이자 광학 문자 인식(OCR) 시스템입니다.
+    사진을 분석하여 아래의 [절대 행동 지침]을 엄격히 준수한 후 JSON으로만 결과를 출력하십시오.
+    
+    [절대 행동 지침]
+    1. 텍스트 판독(OCR) 최우선: 사진 내에 제품명, 원재료명, 영양성분표 등의 글자가 있다면 시각적 형태나 색상보다 글자를 무조건 1순위 팩트로 신뢰하십시오.
+    2. 시각적 착시 및 추측 금지: 글자 판독이 불가능한 경우에만 시각적 추론을 사용하되 가장 보편적인 식재료로 보수적으로 판단하십시오.
+    3. 객관적 영양 수치 매핑: 판독된 정확한 제품명 또는 메뉴를 바탕으로, 시중의 표준 데이터베이스에 근접한 수치를 입력하십시오. 알 수 없는 수치는 0처리.
+    4. 출력 형식: 마크다운 기호 없이 순수 JSON 포맷만 반환.
+    
+    출력 JSON 키 구조:
+    {"name": "인식된 메뉴명", "calories": 0, "carb": 0, "protein": 0, "fat": 0, "sugar": 0, "sat_fat": 0, "trans_fat": 0, "sodium": 0, "fiber": 0, "quality": "좋은 음식/주의 음식/위험 음식 중 택 1"}'''
+    
+    img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+    response = model.generate_content([prompt, img])
+    return response.text.strip()
+
+@st.cache_data(show_spinner=False)
+def analyze_atflee_pdf(pdf_bytes, api_key):
+    if not api_key: return "{}"
+    pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+    pdf_text = "".join(page.extract_text() for page in pdf_reader.pages)
+    
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name='gemini-3.7-flash', generation_config={"response_mime_type": "application/json"})
+    prompt = f'''당신은 텍스트 데이터 분석 전문가입니다. 
+    아래 제공된 체성분 분석 결과지 텍스트에서 주요 데이터를 찾아 JSON으로 반환하십시오.
+    
+    [절대 행동 지침]
+    1. 숫자만 소수점까지 정확히 추출하세요.
+    2. 출력은 반드시 아래 JSON 형식으로만 반환하세요.
+    {{"weight": 76.2, "skeletal_muscle": 33.1, "body_fat_percent": 23.1, "visceral_fat": 7, "bmr": 1635}}
+    
+    [PDF 텍스트 데이터]
+    {pdf_text}'''
+    response = model.generate_content(prompt)
+    return response.text.strip()
 
 # ==========================================
 # 1. 모바일 최적화 및 직관적 UI CSS
@@ -155,7 +201,6 @@ def init_diet_db():
 
 conn = init_diet_db()
 
-# DB 스키마 마이그레이션 (추가 컬럼)
 c = conn.cursor()
 c.execute("PRAGMA table_info(diet_logs)")
 columns = [col[1] for col in c.fetchall()]
@@ -196,11 +241,9 @@ def sync_from_sheets(conn):
 def commit_and_sync(conn, table_names=None):
     conn.commit()
     client = get_gsheet_client()
-    if not client: 
-        return
+    if not client: return
     try: sheet = client.open("my_diet_db")
-    except Exception: 
-        return
+    except Exception: return
     
     tables = table_names if table_names else ['user_profile', 'daily_habits', 'beverage_logs', 'exercise_logs', 'diet_logs', 'daily_weight']
     for t in tables:
@@ -212,10 +255,8 @@ def commit_and_sync(conn, table_names=None):
             if not df.empty:
                 clean_df = df.fillna("").astype(str).replace(["nan", "NaN", "None", "<NA>"], "")
                 data = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
-                try:
-                    ws.update(values=data, range_name='A1')
-                except Exception as e:
-                    print(f"[{t}] 테이블 동기화 에러 발생: {e}") 
+                try: ws.update(values=data, range_name='A1')
+                except Exception: pass
         except: pass
 
 if 'db_synced' not in st.session_state:
@@ -243,7 +284,6 @@ def generate_master_feedback(p):
     act = str(safe_get(p.get('activity_level'), '1단계 (주로 앉아서 생활)'))
     exc = str(safe_get(p.get('exercise_type'), '운동 안 함'))
     
-    h_m = h / 100
     bmr = (10 * w) + (6.25 * h) - (5 * a) + (5 if g == "남성" else -161)
     
     base_multi = 1.2
@@ -251,18 +291,15 @@ def generate_master_feedback(p):
     elif "3단계" in act: base_multi = 1.55
     elif "4단계" in act: base_multi = 1.725
     
-    if exc in ["고강도 웨이트/파워리프팅", "철인 3종/마라톤 훈련", "엘리트 체육/프로 선수 훈련", "인터벌 러닝/크로스핏"]: 
-        base_multi += 0.1
-    elif exc in ["웨이트 트레이닝 (머신/프리웨이트)", "격렬한 구기 종목 (축구, 농구 등)", "가벼운 조깅/러닝", "자전거/수영 (저강도)"]: 
-        base_multi += 0.05
+    if exc in ["고강도 웨이트/파워리프팅", "철인 3종/마라톤 훈련", "엘리트 체육/프로 선수 훈련", "인터벌 러닝/크로스핏"]: base_multi += 0.1
+    elif exc in ["웨이트 트레이닝 (머신/프리웨이트)", "격렬한 구기 종목 (축구, 농구 등)", "가벼운 조깅/러닝", "자전거/수영 (저강도)"]: base_multi += 0.05
     
     tdee = bmr * base_multi
     deficit = 500 if w > t_w else 0
     target_cal = max(int(tdee - deficit), int(bmr) + 100)
     
     p_ratio = 1.8
-    if "웨이트" in exc or "고강도" in exc or "크로스핏" in exc or "마라톤" in exc:
-        p_ratio = 2.0
+    if "웨이트" in exc or "고강도" in exc or "크로스핏" in exc or "마라톤" in exc: p_ratio = 2.0
         
     protein_g = int(t_w * p_ratio) 
     fat_g = int((target_cal * 0.25) / 9)
@@ -273,7 +310,7 @@ def generate_master_feedback(p):
     return target_cal, carb_g, protein_g, fat_g, adv
 
 # ==========================================
-# 4. 앱 강제 라우팅 및 좌측 사이드바 마크다운 메뉴
+# 4. 앱 강제 라우팅 및 좌측 사이드바
 # ==========================================
 p_df = pd.read_sql("SELECT * FROM user_profile ORDER BY id DESC LIMIT 1", conn)
 is_new_user = p_df.empty
@@ -338,7 +375,6 @@ if menu == "📝 일일 기록 (메인)":
     
     with tabs[0]: 
         st.markdown("##### 🍽️ 새로운 식사 시작 (입력)")
-        
         user_start_time = st.text_input("식사 시작 시각 (예: 12:00)", value=now.strftime("%H:%M"))
         meal_type = ""
         
@@ -368,25 +404,9 @@ if menu == "📝 일일 기록 (메인)":
                     else:
                         with st.spinner("AI가 시각적 형태보다 텍스트(OCR)를 최우선으로 정밀 판독 중입니다..."):
                             try:
-                                genai.configure(api_key=GEMINI_API_KEY)
-                                model = genai.GenerativeModel(model_name='gemini-3.7-flash', generation_config={"response_mime_type": "application/json"})
+                                img_bytes = uploaded_file.getvalue()
+                                result_text = analyze_food_image(img_bytes, GEMINI_API_KEY)
                                 
-                                prompt = '''당신은 식품 영양 분석 전문가이자 광학 문자 인식(OCR) 시스템입니다.
-                                사진을 분석하여 아래의 [절대 행동 지침]을 엄격히 준수한 후 JSON으로만 결과를 출력하십시오.
-                                
-                                [절대 행동 지침]
-                                1. 텍스트 판독(OCR) 최우선: 사진 내에 제품명, 원재료명, 영양성분표 등의 글자가 있다면 시각적 형태나 색상보다 글자를 무조건 1순위 팩트로 신뢰하십시오.
-                                2. 시각적 착시 및 추측 금지: 글자 판독이 불가능한 경우에만 시각적 추론을 사용하되 가장 보편적인 식재료로 보수적으로 판단하십시오.
-                                3. 객관적 영양 수치 매핑: 판독된 정확한 제품명 또는 메뉴를 바탕으로, 시중의 표준 데이터베이스에 근접한 수치를 입력하십시오. 알 수 없는 수치는 0처리.
-                                4. 출력 형식: 마크다운 기호 없이 순수 JSON 포맷만 반환.
-                                
-                                출력 JSON 키 구조:
-                                {"name": "인식된 메뉴명", "calories": 0, "carb": 0, "protein": 0, "fat": 0, "sugar": 0, "sat_fat": 0, "trans_fat": 0, "sodium": 0, "fiber": 0, "quality": "좋은 음식/주의 음식/위험 음식 중 택 1"}'''
-                                
-                                img = Image.open(uploaded_file).convert('RGB')
-                                response = model.generate_content([prompt, img])
-                                
-                                result_text = response.text.strip()
                                 start_idx, end_idx = result_text.find('{'), result_text.rfind('}')
                                 if start_idx != -1 and end_idx != -1:
                                     ai_data = json.loads(result_text[start_idx:end_idx+1])
@@ -613,29 +633,12 @@ if menu == "📝 일일 기록 (메인)":
                 else:
                     with st.spinner("AI가 PDF에서 체성분 데이터를 정밀 판독 중입니다..."):
                         try:
-                            pdf_reader = PyPDF2.PdfReader(pdf_file)
-                            pdf_text = "".join(page.extract_text() for page in pdf_reader.pages)
+                            pdf_bytes = pdf_file.getvalue()
+                            result_text = analyze_atflee_pdf(pdf_bytes, GEMINI_API_KEY)
                             
-                            genai.configure(api_key=GEMINI_API_KEY)
-                            model = genai.GenerativeModel(model_name='gemini-3.7-flash', generation_config={"response_mime_type": "application/json"})
-                            
-                            prompt = f'''당신은 텍스트 데이터 분석 전문가입니다. 
-                            아래 제공된 체성분 분석 결과지 텍스트에서 주요 데이터를 찾아 JSON으로 반환하십시오.
-                            
-                            [절대 행동 지침]
-                            1. 숫자만 소수점까지 정확히 추출하세요.
-                            2. 출력은 반드시 아래 JSON 형식으로만 반환하세요.
-                            {{"weight": 76.2, "skeletal_muscle": 33.1, "body_fat_percent": 23.1, "visceral_fat": 7, "bmr": 1635}}
-                            
-                            [PDF 텍스트 데이터]
-                            {pdf_text}'''
-                            
-                            resp = model.generate_content(prompt)
-                            res_txt = resp.text.strip()
-                            
-                            s_idx, e_idx = res_txt.find('{'), res_txt.rfind('}')
+                            s_idx, e_idx = result_text.find('{'), result_text.rfind('}')
                             if s_idx != -1 and e_idx != -1:
-                                w_data = json.loads(res_txt[s_idx:e_idx+1])
+                                w_data = json.loads(result_text[s_idx:e_idx+1])
                                 st.session_state.ai_weight = float(w_data.get("weight", 0.0))
                                 st.session_state.ai_muscle = float(w_data.get("skeletal_muscle", 0.0))
                                 st.session_state.ai_fat_pct = float(w_data.get("body_fat_percent", 0.0))
@@ -647,7 +650,6 @@ if menu == "📝 일일 기록 (메인)":
                         except Exception as e:
                             st.error(f"통신 또는 파싱 에러: {e}")
 
-        # DB에서 기존 값 불러오기 및 기본값 세팅
         curr_w_df = pd.read_sql(f"SELECT * FROM daily_weight WHERE date='{today_str}'", conn)
         
         default_w = str(st.session_state.ai_weight) if st.session_state.get('ai_weight') else (str(curr_w_df.iloc[0]['weight']) if not curr_w_df.empty else str(p.get('weight', 60.0)))
@@ -683,7 +685,6 @@ if menu == "📝 일일 기록 (메인)":
                     conn.commit()
                     commit_and_sync(conn, ['daily_weight', 'user_profile'])
                     
-                    # 저장 성공 시 AI 추출 임시 데이터 초기화
                     for k in ['ai_weight', 'ai_muscle', 'ai_fat_pct', 'ai_visceral_fat', 'ai_bmr']:
                         if k in st.session_state: del st.session_state[k]
                         
