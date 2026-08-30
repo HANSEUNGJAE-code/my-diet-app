@@ -41,7 +41,7 @@ def analyze_food_image(img_bytes, api_key):
     img.save(img_buffer, format="JPEG", quality=85)
     img_buffer.seek(0)
     
-    # 2. 딕셔너리(jpeg_part) 대신 PIL 객체로 다시 감싸서 무한 로딩 버그 원천 차단
+    # 2. 딕셔너리 대신 PIL 객체로 다시 감싸서 무한 로딩 버그 원천 차단
     optimized_img = Image.open(img_buffer)
     
     genai.configure(api_key=api_key)
@@ -174,9 +174,10 @@ st.markdown("""
     
     .micro-box { background-color:#FDFEFE; padding:10px; border-radius:8px; border:1px dashed #BDC3C7; text-align:center; font-size:0.9rem; color:#34495E; margin-bottom: 20px;}
     
-    .diet-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-    .diet-table th { background-color: #34495E; color: white; padding: 12px 5px; text-align: center; font-weight: 800; font-size: 0.9rem;}
-    .diet-table td { padding: 14px 5px; text-align: center; border-bottom: 1px solid #E5E7E9; vertical-align: middle; background-color: white;}
+    /* 테이블 모바일 최적화 (글씨 잘림 방지) */
+    .diet-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    .diet-table th { background-color: #34495E; color: white; padding: 10px 4px; text-align: center; font-weight: 800; font-size: 0.9rem; word-break: keep-all;}
+    .diet-table td { padding: 12px 4px; text-align: center; border-bottom: 1px solid #E5E7E9; vertical-align: middle; background-color: white; word-break: keep-all; overflow-wrap: break-word; white-space: normal; line-height: 1.5;}
     .badge { padding: 4px 8px; border-radius: 6px; font-weight: 900; font-size: 0.85rem; white-space: nowrap;}
     
     h1 { font-size: 1.65rem !important; font-weight: 900 !important; color: #2C3E50; text-align: center; margin-bottom: 5px; white-space: nowrap; letter-spacing: -0.5px;}
@@ -730,10 +731,16 @@ if menu == "📝 일일 기록 (메인)":
                     for k in ['ai_weight', 'ai_muscle', 'ai_fat_pct', 'ai_visceral_fat', 'ai_bmr']:
                         if k in st.session_state: del st.session_state[k]
                         
-                    st.success("☁️ 체성분 데이터가 클라우드에 안전하게 저장되었습니다.")
+                    # 💡 성공 메시지가 덮어씌워지지 않도록 세션 스테이트에 저장 후 리런
+                    st.session_state.weight_save_success = True
                     st.rerun()
                 except ValueError: 
                     st.error("숫자만 입력해주세요.")
+
+        # 💡 리런 된 이후 폼 바깥에서 즉각 피드백 노출
+        if st.session_state.get("weight_save_success"):
+            st.success("✅ ☁️ 체성분 데이터가 안전하게 저장되었습니다!")
+            st.session_state.weight_save_success = False
 
     if len(tabs) == 5: 
         with tabs[4]:
@@ -916,7 +923,8 @@ elif menu == "📅 달력 조회":
     st.markdown("##### 📋 습관 및 체중 피드백")
     habit_df = pd.read_sql(f"SELECT * FROM daily_habits WHERE date='{view_date_str}'", conn)
     
-    habit_table = "<table class='diet-table'><tr><th style='width:25%;'>항목</th><th style='width:20%;'>상태</th><th style='width:55%;'>전문가 피드백</th></tr>"
+    # 💡 텍스트 잘림을 방지하기 위해 열 너비 비율 최적화
+    habit_table = "<table class='diet-table'><tr><th style='width:18%;'>항목</th><th style='width:22%;'>상태</th><th style='width:60%;'>전문가 피드백</th></tr>"
     
     if not habit_df.empty:
         h_row = habit_df.iloc[0]
