@@ -29,21 +29,18 @@ def get_gsheet_client():
         return None
 
 # ==========================================
-# AI 분석 로직 (3.5 Flash-Lite + 고속 JPEG 압축 및 버그 방지)
+# AI 분석 로직
 # ==========================================
 def analyze_food_image(img_bytes, api_key):
     if not api_key: return "{}"
     
-    # 1. 고속 압축
     img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
     img.thumbnail((800, 800))
     img_buffer = io.BytesIO()
     img.save(img_buffer, format="JPEG", quality=85)
     img_buffer.seek(0)
     
-    # 2. 딕셔너리 대신 PIL 객체로 다시 감싸서 무한 로딩 버그 원천 차단
     optimized_img = Image.open(img_buffer)
-    
     genai.configure(api_key=api_key)
     
     model = genai.GenerativeModel(
@@ -69,7 +66,6 @@ def analyze_food_image(img_bytes, api_key):
 def analyze_atflee_pdf(pdf_bytes, api_key):
     if not api_key: return "{}"
     
-    # 1. 렌더링 및 압축
     pdf = pdfium.PdfDocument(pdf_bytes)
     page = pdf[0]
     img = page.render(scale=2.0).to_pil().convert('RGB')
@@ -78,9 +74,7 @@ def analyze_atflee_pdf(pdf_bytes, api_key):
     img.save(img_buffer, format="JPEG", quality=85)
     img_buffer.seek(0)
     
-    # 2. 딕셔너리 대신 PIL 객체로 다시 감싸서 무한 로딩 버그 원천 차단
     optimized_img = Image.open(img_buffer)
-    
     genai.configure(api_key=api_key)
     
     model = genai.GenerativeModel(
@@ -118,37 +112,19 @@ st.markdown("""
     .stTextInput input, .stSelectbox div { border-radius: 8px !important; font-weight: 600 !important; }
     [data-testid="stDecoration"] { display: none; }
     
-    /* 서브 버튼 */
     [data-testid="baseButton-secondary"] {
-        background-color: #2C3E50 !important;
-        border: none !important;
-        border-radius: 8px !important;
-        color: white !important;
-        font-weight: 800 !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
-        transition: all 0.2s ease !important;
+        background-color: #2C3E50 !important; border: none !important; border-radius: 8px !important;
+        color: white !important; font-weight: 800 !important; box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important; transition: all 0.2s ease !important;
     }
-    [data-testid="baseButton-secondary"]:active {
-        transform: scale(0.98) !important;
-    }
+    [data-testid="baseButton-secondary"]:active { transform: scale(0.98) !important; }
     
-    /* 메인 버튼 (입력 저장용) */
     [data-testid="baseButton-primary"] {
-        background: linear-gradient(135deg, #FF6B6B, #C0392B) !important;
-        border: none !important;
-        border-radius: 10px !important;
-        color: white !important;
-        font-size: 1.15rem !important;
-        font-weight: 900 !important;
-        height: 55px !important;
-        box-shadow: 0 4px 10px rgba(192, 57, 43, 0.25) !important;
-        transition: all 0.2s ease !important;
+        background: linear-gradient(135deg, #FF6B6B, #C0392B) !important; border: none !important; border-radius: 10px !important;
+        color: white !important; font-size: 1.15rem !important; font-weight: 900 !important; height: 55px !important;
+        box-shadow: 0 4px 10px rgba(192, 57, 43, 0.25) !important; transition: all 0.2s ease !important;
     }
-    [data-testid="baseButton-primary"]:active {
-        transform: scale(0.98) !important;
-    }
+    [data-testid="baseButton-primary"]:active { transform: scale(0.98) !important; }
     
-    /* 대시보드 디자인 */
     .status-dashboard { padding: 22px; border-radius: 12px; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); color: white;}
     .status-fasting { background: linear-gradient(135deg, #1ABC9C, #16A085); }
     .status-eating { background: linear-gradient(135deg, #E67E22, #D35400); }
@@ -174,7 +150,6 @@ st.markdown("""
     
     .micro-box { background-color:#FDFEFE; padding:10px; border-radius:8px; border:1px dashed #BDC3C7; text-align:center; font-size:0.9rem; color:#34495E; margin-bottom: 20px;}
     
-    /* 테이블 모바일 최적화 (강제 넓이 고정 해제) */
     .diet-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     .diet-table th { background-color: #34495E; color: white; padding: 10px 4px; text-align: center; font-weight: 800; font-size: 0.9rem; word-break: keep-all;}
     .diet-table td { padding: 12px 4px; text-align: center; border-bottom: 1px solid #E5E7E9; vertical-align: middle; background-color: white; line-height: 1.5;}
@@ -291,6 +266,7 @@ if 'db_synced' not in st.session_state:
         sync_from_sheets(conn)
         st.session_state.db_synced = True
 
+# UTC+9 통일 (앱 전체 기준 시간)
 now = datetime.utcnow() + timedelta(hours=9)
 today_str = now.strftime("%Y-%m-%d")
 wd_map = {0:'월', 1:'화', 2:'수', 3:'목', 4:'금', 5:'토', 6:'일'}
@@ -318,8 +294,7 @@ def generate_master_feedback(p):
         res = cursor.fetchone()
         if res:
             atflee_bmr = int(res[0])
-    except:
-        pass
+    except: pass
         
     if atflee_bmr > 0:
         bmr = atflee_bmr
@@ -530,19 +505,19 @@ if menu == "📝 일일 기록 (메인)":
         col_w1, col_w2 = st.columns(2)
         with col_w1:
             if st.button("💧 작은 컵 (+1)", use_container_width=True):
-                if w_df.empty: c.execute(f"INSERT INTO daily_habits (date, water_unit, water_amt) VALUES ('{today_str}', '잔', 1.0)")
-                else: c.execute(f"UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 1.0 WHERE date='{today_str}'")
+                if w_df.empty: c.execute("INSERT INTO daily_habits (date, water_unit, water_amt) VALUES (?, '잔', 1.0)", (today_str,))
+                else: c.execute("UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 1.0 WHERE date=?", (today_str,))
                 conn.commit()
                 commit_and_sync(conn, ['daily_habits'])
-                st.session_state.habit_msg = "💧 생수 1단위가 클라우드에 추가되었습니다."
+                st.session_state.habit_msg = "💧 생수 1단위가 추가되었습니다."
                 st.rerun()
         with col_w2:
             if st.button("💧 큰 컵 (+2)", use_container_width=True):
-                if w_df.empty: c.execute(f"INSERT INTO daily_habits (date, water_unit, water_amt) VALUES ('{today_str}', '잔', 2.0)")
-                else: c.execute(f"UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 2.0 WHERE date='{today_str}'")
+                if w_df.empty: c.execute("INSERT INTO daily_habits (date, water_unit, water_amt) VALUES (?, '잔', 2.0)", (today_str,))
+                else: c.execute("UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 2.0 WHERE date=?", (today_str,))
                 conn.commit() 
                 commit_and_sync(conn, ['daily_habits'])
-                st.session_state.habit_msg = "💧 생수 2단위가 로컬에 추가되었습니다."
+                st.session_state.habit_msg = "💧 생수 2단위가 추가되었습니다."
                 st.rerun()
                 
         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
@@ -557,19 +532,19 @@ if menu == "📝 일일 기록 (메인)":
         col_b1, col_b2 = st.columns(2)
         with col_b1:
             if st.button("☕ 작은 캔 (+1)", use_container_width=True):
-                if b_df.empty: c.execute(f"INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES ('{today_str}', '{selected_b_name}', 1.0, '작은 캔')")
-                else: c.execute(f"UPDATE beverage_logs SET amount = amount + 1.0 WHERE id={b_df.iloc[0]['id']}")
+                if b_df.empty: c.execute("INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES (?, ?, 1.0, '작은 캔')", (today_str, selected_b_name))
+                else: c.execute("UPDATE beverage_logs SET amount = amount + 1.0 WHERE id=?", (int(b_df.iloc[0]['id']),))
                 conn.commit()
                 commit_and_sync(conn, ['beverage_logs'])
-                st.session_state.habit_msg = f"☕ [{selected_b_name}] 1단위가 로컬에 추가되었습니다."
+                st.session_state.habit_msg = f"☕ [{selected_b_name}] 1단위 추가 완료."
                 st.rerun()
         with col_b2:
             if st.button("☕ 큰 캔 (+2)", use_container_width=True):
-                if b_df.empty: c.execute(f"INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES ('{today_str}', '{selected_b_name}', 2.0, '큰 캔')")
-                else: c.execute(f"UPDATE beverage_logs SET amount = amount + 2.0 WHERE id={b_df.iloc[0]['id']}")
+                if b_df.empty: c.execute("INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES (?, ?, 2.0, '큰 캔')", (today_str, selected_b_name))
+                else: c.execute("UPDATE beverage_logs SET amount = amount + 2.0 WHERE id=?", (int(b_df.iloc[0]['id']),))
                 conn.commit()
                 commit_and_sync(conn, ['beverage_logs'])
-                st.session_state.habit_msg = f"☕ [{selected_b_name}] 2단위가 로컬에 추가되었습니다."
+                st.session_state.habit_msg = f"☕ [{selected_b_name}] 2단위 추가 완료."
                 st.rerun()
 
         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
@@ -594,21 +569,21 @@ if menu == "📝 일일 기록 (메인)":
                     w_man_amt = float(water_manual_str)
                     b_man_amt = float(bev_manual_str)
                     
-                    c.execute(f"SELECT date FROM daily_habits WHERE date='{today_str}'")
+                    c.execute("SELECT date FROM daily_habits WHERE date=?", (today_str,))
                     if c.fetchone():
-                        c.execute(f"""UPDATE daily_habits SET bed_time='{bed_t_str}', wake_time='{wake_t_str}', water_unit='{w_unit}', water_amt={w_man_amt} WHERE date='{today_str}'""")
+                        c.execute("UPDATE daily_habits SET bed_time=?, wake_time=?, water_unit=?, water_amt=? WHERE date=?", (bed_t_str, wake_t_str, w_unit, w_man_amt, today_str))
                     else:
-                        c.execute(f"""INSERT INTO daily_habits (date, bed_time, wake_time, water_unit, water_amt) VALUES ('{today_str}', '{bed_t_str}', '{wake_t_str}', '{w_unit}', {w_man_amt})""")
+                        c.execute("INSERT INTO daily_habits (date, bed_time, wake_time, water_unit, water_amt) VALUES (?, ?, ?, ?, ?)", (today_str, bed_t_str, wake_t_str, w_unit, w_man_amt))
                     
                     if b_man_amt > 0:
-                        if b_df.empty: c.execute(f"INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES ('{today_str}', '{selected_b_name}', {b_man_amt}, '{b_unit}')")
-                        else: c.execute(f"UPDATE beverage_logs SET amount={b_man_amt}, unit='{b_unit}' WHERE id={b_df.iloc[0]['id']}")
+                        if b_df.empty: c.execute("INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES (?, ?, ?, ?)", (today_str, selected_b_name, b_man_amt, b_unit))
+                        else: c.execute("UPDATE beverage_logs SET amount=?, unit=? WHERE id=?", (b_man_amt, b_unit, int(b_df.iloc[0]['id'])))
                     elif b_man_amt == 0 and not b_df.empty:
-                        c.execute(f"DELETE FROM beverage_logs WHERE id={b_df.iloc[0]['id']}")
+                        c.execute("DELETE FROM beverage_logs WHERE id=?", (int(b_df.iloc[0]['id']),))
                         
                     conn.commit() 
                     commit_and_sync(conn, ['daily_habits', 'beverage_logs'])
-                    st.success("로컬 데이터베이스에 완벽히 업데이트되었습니다!")
+                    st.success("데이터베이스에 완벽히 업데이트되었습니다!")
                 except ValueError:
                     st.error("섭취량은 숫자만 입력해야 합니다.")
 
@@ -629,12 +604,13 @@ if menu == "📝 일일 기록 (메인)":
         t_col1, t_col2 = st.columns(2)
         with t_col1:
             if st.button("▶️ 타이머 시작", use_container_width=True):
-                st.session_state.ex_start = datetime.now()
+                st.session_state.ex_start = datetime.utcnow() + timedelta(hours=9)
                 st.rerun()
         with t_col2:
             if st.button("⏹️ 타이머 종료", use_container_width=True):
                 if st.session_state.ex_start:
-                    diff = datetime.now() - st.session_state.ex_start
+                    kst_now = datetime.utcnow() + timedelta(hours=9)
+                    diff = kst_now - st.session_state.ex_start
                     st.session_state.ex_mins = max(1, int(diff.total_seconds() / 60))
                     st.session_state.ex_start = None
                     st.rerun()
@@ -666,7 +642,6 @@ if menu == "📝 일일 기록 (메인)":
     with tabs[3]:
         st.markdown("##### 📉 오늘의 체성분 입력 (PDF 연동)")
         
-        # 💡 성공 알림을 폼 최상단으로 끌어올려 화면에서 가장 먼저 보이게 수정
         if st.session_state.get("weight_save_success"):
             st.success("✅ ☁️ 체성분 데이터가 클라우드 및 로컬에 완벽하게 저장되었습니다!")
             st.session_state.weight_save_success = False
@@ -701,11 +676,12 @@ if menu == "📝 일일 기록 (메인)":
 
         curr_w_df = pd.read_sql(f"SELECT * FROM daily_weight WHERE date='{today_str}'", conn)
         
-        default_w = str(st.session_state.ai_weight) if st.session_state.get('ai_weight') else (str(curr_w_df.iloc[0]['weight']) if not curr_w_df.empty else str(p.get('weight', 60.0)))
-        default_m = str(st.session_state.ai_muscle) if st.session_state.get('ai_muscle') else (str(curr_w_df.iloc[0]['skeletal_muscle']) if not curr_w_df.empty and 'skeletal_muscle' in curr_w_df.columns else "0.0")
-        default_f = str(st.session_state.ai_fat_pct) if st.session_state.get('ai_fat_pct') else (str(curr_w_df.iloc[0]['body_fat_percent']) if not curr_w_df.empty and 'body_fat_percent' in curr_w_df.columns else "0.0")
-        default_v = str(st.session_state.ai_visceral_fat) if st.session_state.get('ai_visceral_fat') else (str(curr_w_df.iloc[0]['visceral_fat']) if not curr_w_df.empty and 'visceral_fat' in curr_w_df.columns else "0")
-        default_bmr = str(st.session_state.ai_bmr) if st.session_state.get('ai_bmr') else (str(curr_w_df.iloc[0]['bmr']) if not curr_w_df.empty and 'bmr' in curr_w_df.columns else "0")
+        # 값이 0이어도 False로 오인해 패스하지 않도록 'in' 조건으로 전면 수정
+        default_w = str(st.session_state.ai_weight) if 'ai_weight' in st.session_state else (str(curr_w_df.iloc[0]['weight']) if not curr_w_df.empty else str(p.get('weight', 60.0)))
+        default_m = str(st.session_state.ai_muscle) if 'ai_muscle' in st.session_state else (str(curr_w_df.iloc[0]['skeletal_muscle']) if not curr_w_df.empty and 'skeletal_muscle' in curr_w_df.columns else "0.0")
+        default_f = str(st.session_state.ai_fat_pct) if 'ai_fat_pct' in st.session_state else (str(curr_w_df.iloc[0]['body_fat_percent']) if not curr_w_df.empty and 'body_fat_percent' in curr_w_df.columns else "0.0")
+        default_v = str(st.session_state.ai_visceral_fat) if 'ai_visceral_fat' in st.session_state else (str(curr_w_df.iloc[0]['visceral_fat']) if not curr_w_df.empty and 'visceral_fat' in curr_w_df.columns else "0")
+        default_bmr = str(st.session_state.ai_bmr) if 'ai_bmr' in st.session_state else (str(curr_w_df.iloc[0]['bmr']) if not curr_w_df.empty and 'bmr' in curr_w_df.columns else "0")
         
         with st.form("weight_form_main"):
             c1, c2, c3 = st.columns(3)
@@ -722,14 +698,14 @@ if menu == "📝 일일 기록 (메인)":
                     t_w, t_m, t_f = float(today_w_str), float(muscle_str), float(fat_pct_str)
                     t_v, t_bmr = int(vf_str), int(bmr_str)
                     
-                    c.execute(f"SELECT id FROM daily_weight WHERE date='{today_str}'")
+                    c.execute("SELECT id FROM daily_weight WHERE date=?", (today_str,))
                     if c.fetchone():
-                        c.execute(f"UPDATE daily_weight SET weight={t_w}, skeletal_muscle={t_m}, body_fat_percent={t_f}, visceral_fat={t_v}, bmr={t_bmr} WHERE date='{today_str}'")
+                        c.execute("UPDATE daily_weight SET weight=?, skeletal_muscle=?, body_fat_percent=?, visceral_fat=?, bmr=? WHERE date=?", (t_w, t_m, t_f, t_v, t_bmr, today_str))
                     else:
-                        c.execute(f"INSERT INTO daily_weight (date, weight, skeletal_muscle, body_fat_percent, visceral_fat, bmr) VALUES ('{today_str}', {t_w}, {t_m}, {t_f}, {t_v}, {t_bmr})")
+                        c.execute("INSERT INTO daily_weight (date, weight, skeletal_muscle, body_fat_percent, visceral_fat, bmr) VALUES (?, ?, ?, ?, ?, ?)", (today_str, t_w, t_m, t_f, t_v, t_bmr))
                         
                     if not is_new_user:
-                        c.execute(f"UPDATE user_profile SET weight = {t_w} WHERE id = {p['id']}")
+                        c.execute("UPDATE user_profile SET weight = ? WHERE id = ?", (t_w, int(p['id'])))
                         
                     conn.commit()
                     commit_and_sync(conn, ['daily_weight', 'user_profile'])
@@ -737,7 +713,6 @@ if menu == "📝 일일 기록 (메인)":
                     for k in ['ai_weight', 'ai_muscle', 'ai_fat_pct', 'ai_visceral_fat', 'ai_bmr']:
                         if k in st.session_state: del st.session_state[k]
                         
-                    # 💡 성공 처리 후 다시 렌더링되게 하여 최상단에 메시지를 노출
                     st.session_state.weight_save_success = True
                     st.rerun()
                 except ValueError: 
@@ -751,7 +726,7 @@ if menu == "📝 일일 기록 (메인)":
                 if st.form_submit_button("로컬 저장"):
                     try:
                         valid_date = datetime.strptime(last_p_date.strip(), "%Y-%m-%d")
-                        c.execute(f"UPDATE user_profile SET last_period_date = '{last_p_date}' WHERE id = {p['id']}")
+                        c.execute("UPDATE user_profile SET last_period_date = ? WHERE id = ?", (last_p_date, int(p['id'])))
                         conn.commit()
                         commit_and_sync(conn, ['user_profile'])
                         st.success("저장 완료.")
@@ -773,8 +748,7 @@ elif menu == "📅 달력 조회":
         avg_cal = int(week_logs['cal'].fillna(0).mean()) if not week_logs.empty else 0
         avg_p = int(week_logs['p'].fillna(0).mean()) if not week_logs.empty else 0
     except:
-        avg_cal = 0
-        avg_p = 0
+        avg_cal, avg_p = 0, 0
     
     st.markdown(f"""
     <div class='trend-box'>
@@ -810,24 +784,17 @@ elif menu == "📅 달력 조회":
     bev_df = pd.read_sql(f"SELECT * FROM beverage_logs WHERE date='{view_date_str}'", conn)
     
     for idx, b_row in bev_df.iterrows():
-        calc_b_name = b_row['bev_name']
-        calc_b_amt = b_row['amount']
-        calc_b_un = b_row['unit']
+        calc_b_name, calc_b_amt, calc_b_un = b_row['bev_name'], b_row['amount'], b_row['unit']
         
         if calc_b_un == "작은 캔": vol_multi = 2.5
         elif calc_b_un == "큰 캔": vol_multi = 3.55
         else: vol_multi = 2.0
         
-        if calc_b_name in ["일반 탄산음료 (콜라, 사이다)", "과일 주스 / 스무디", "기타 당류 포함 액상"]:
-            k_per_100, c_per_100 = 45, 11
-        elif calc_b_name == "달콤한 커피류 (믹스커피, 바닐라라떼 등)":
-            k_per_100, c_per_100 = 60, 10
-        elif calc_b_name == "가향 우유 (초코우유, 바나나우유 등)":
-            k_per_100, c_per_100 = 80, 10
-        elif calc_b_name in ["단백질 보충 액상", "일반 우유 / 무가당 두유"]:
-            k_per_100, c_per_100 = 50, 5 
-        else: 
-            k_per_100, c_per_100 = 0, 0
+        if calc_b_name in ["일반 탄산음료 (콜라, 사이다)", "과일 주스 / 스무디", "기타 당류 포함 액상"]: k_per_100, c_per_100 = 45, 11
+        elif calc_b_name == "달콤한 커피류 (믹스커피, 바닐라라떼 등)": k_per_100, c_per_100 = 60, 10
+        elif calc_b_name == "가향 우유 (초코우유, 바나나우유 등)": k_per_100, c_per_100 = 80, 10
+        elif calc_b_name in ["단백질 보충 액상", "일반 우유 / 무가당 두유"]: k_per_100, c_per_100 = 50, 5 
+        else: k_per_100, c_per_100 = 0, 0
             
         e_cal += (k_per_100 * vol_multi * calc_b_amt)
         e_c += (c_per_100 * vol_multi * calc_b_amt)
@@ -924,7 +891,6 @@ elif menu == "📅 달력 조회":
     st.markdown("##### 📋 습관 및 체중 피드백")
     habit_df = pd.read_sql(f"SELECT * FROM daily_habits WHERE date='{view_date_str}'", conn)
     
-    # 💡 뱃지 잘림 방지를 위해 너비 비율을 재조정하고 텍스트 줄바꿈을 유연하게 처리
     habit_table = "<table class='diet-table'><tr><th style='width:20%;'>항목</th><th style='width:25%;'>상태</th><th style='width:55%;'>전문가 피드백</th></tr>"
     
     if not habit_df.empty:
@@ -956,20 +922,13 @@ elif menu == "📅 달력 조회":
     for idx, b_row in bev_df.iterrows():
         b_name, b_amt, b_un = b_row['bev_name'], b_row['amount'], b_row['unit']
         
-        if b_name == "아메리카노 / 에스프레소":
-            b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 당류가 없어 대사에 좋지만, 이뇨 작용으로 수분이 손실되니 마신 양의 2배만큼 생수를 보충하세요. (늦은 오후 섭취 시 수면 방해 주의)"
-        elif b_name == "차류 (녹차, 홍차, 콤부차 등)":
-            b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 수분 보충과 항산화에 좋으나, 카페인이 든 차는 늦은 시간 섭취를 피하는 것이 좋습니다."
-        elif b_name == "제로 칼로리 음료 (제로콜라 등)":
-            b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 혈당을 올리진 않으나 인공감미료가 뇌의 보상 회로를 자극해 가짜 배고픔을 유발할 수 있습니다. 단독 섭취보다는 식사 중에만 드세요."
-        elif b_name in ["단백질 보충 액상", "일반 우유 / 무가당 두유"]:
-            b_badge, b_msg = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의</span>", f"{b_amt}{b_un} 섭취. 영양가는 높으나 '칼로리'가 있어 단식(공복) 시간을 깨뜨립니다. 식사 대용이나 운동 직후에 섭취하세요."
-        elif b_name == "달콤한 커피류 (믹스커피, 바닐라라떼 등)":
-            b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 정제당과 포화지방(크림)의 결합은 혈당 스파이크와 복부 체지방 축적을 가장 빠르고 강하게 유발합니다."
-        elif b_name == "과일 주스 / 스무디":
-            b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 과일을 갈아 마시면 식이섬유 구조가 파괴되어, 액상과당과 똑같이 간에 지방으로 직접 축적됩니다."
-        else:
-            b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 액상과당은 인슐린을 급격히 분비시켜 체지방 연소 모드를 즉시 중단시킵니다."
+        if b_name == "아메리카노 / 에스프레소": b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 당류가 없어 대사에 좋지만, 이뇨 작용으로 수분이 손실되니 마신 양의 2배만큼 생수를 보충하세요. (늦은 오후 섭취 시 수면 방해 주의)"
+        elif b_name == "차류 (녹차, 홍차, 콤부차 등)": b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 수분 보충과 항산화에 좋으나, 카페인이 든 차는 늦은 시간 섭취를 피하는 것이 좋습니다."
+        elif b_name == "제로 칼로리 음료 (제로콜라 등)": b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 혈당을 올리진 않으나 인공감미료가 뇌의 보상 회로를 자극해 가짜 배고픔을 유발할 수 있습니다. 단독 섭취보다는 식사 중에만 드세요."
+        elif b_name in ["단백질 보충 액상", "일반 우유 / 무가당 두유"]: b_badge, b_msg = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의</span>", f"{b_amt}{b_un} 섭취. 영양가는 높으나 '칼로리'가 있어 단식(공복) 시간을 깨뜨립니다. 식사 대용이나 운동 직후에 섭취하세요."
+        elif b_name == "달콤한 커피류 (믹스커피, 바닐라라떼 등)": b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 정제당과 포화지방(크림)의 결합은 혈당 스파이크와 복부 체지방 축적을 가장 빠르고 강하게 유발합니다."
+        elif b_name == "과일 주스 / 스무디": b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 과일을 갈아 마시면 식이섬유 구조가 파괴되어, 액상과당과 똑같이 간에 지방으로 직접 축적됩니다."
+        else: b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 액상과당은 인슐린을 급격히 분비시켜 체지방 연소 모드를 즉시 중단시킵니다."
 
         habit_table += f"<tr><td><b>음료</b><br><span style='font-size:0.7rem; color:#7F8C8D;'>{b_name}</span></td><td>{b_badge}</td><td style='text-align:left; font-size:0.85rem;'>{b_msg}</td></tr>"
     
@@ -986,23 +945,14 @@ elif menu == "📅 달력 조회":
             diff = round(day_w - prev_w, 1)
             
             if diff <= -0.1:
-                w_badge = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 감량</span>"
-                w_msg = f"전일 대비 <b>{abs(diff)}kg 감량</b>되었습니다. 체지방 연소가 원활한 긍정적 지표입니다. 현재 대사 상태를 유지하세요."
-                w_disp = f"{day_w}kg <span style='color:#1E8449; font-weight:bold;'>(⬇ {abs(diff)}kg)</span>"
+                w_badge, w_msg, w_disp = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 감량</span>", f"전일 대비 <b>{abs(diff)}kg 감량</b>되었습니다. 체지방 연소가 원활한 긍정적 지표입니다. 현재 대사 상태를 유지하세요.", f"{day_w}kg <span style='color:#1E8449; font-weight:bold;'>(⬇ {abs(diff)}kg)</span>"
             elif diff >= 0.1:
-                w_badge = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 증가</span>"
-                w_msg = f"전일 대비 <b>{diff}kg 증가</b>했습니다. 단순 수분 정체 및 글리코겐 로딩일 확률이 높으니 스트레스 받지 마시고, 전날 나트륨 섭취량을 점검하세요."
-                w_disp = f"{day_w}kg <span style='color:#C0392B; font-weight:bold;'>(⬆ {diff}kg)</span>"
+                w_badge, w_msg, w_disp = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 증가</span>", f"전일 대비 <b>{diff}kg 증가</b>했습니다. 단순 수분 정체 및 글리코겐 로딩일 확률이 높으니 스트레스 받지 마시고, 전날 나트륨 섭취량을 점검하세요.", f"{day_w}kg <span style='color:#C0392B; font-weight:bold;'>(⬆ {diff}kg)</span>"
             else:
-                w_badge = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 유지/정체</span>"
-                w_msg = "전일과 체중이 동일합니다. 대사 적응기이거나 수분 정체기일 수 있습니다. 충분한 수분 섭취와 활동량 유지가 필요합니다."
-                w_disp = f"{day_w}kg <span style='color:#D4AC0D; font-weight:bold;'>( - )</span>"
+                w_badge, w_msg, w_disp = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 유지/정체</span>", "전일과 체중이 동일합니다. 대사 적응기이거나 수분 정체기일 수 있습니다. 충분한 수분 섭취와 활동량 유지가 필요합니다.", f"{day_w}kg <span style='color:#D4AC0D; font-weight:bold;'>( - )</span>"
         else:
-            w_badge = "<span class='badge' style='background:#F2F3F4; color:#2C3E50;'>기록 시작</span>"
-            w_msg = "비교할 전일 데이터가 없습니다. 내일부터 일일 변화량 및 전문 피드백이 제공됩니다."
-            w_disp = f"{day_w}kg"
+            w_badge, w_msg, w_disp = "<span class='badge' style='background:#F2F3F4; color:#2C3E50;'>기록 시작</span>", "비교할 전일 데이터가 없습니다. 내일부터 일일 변화량 및 전문 피드백이 제공됩니다.", f"{day_w}kg"
             
-        # 💡 요청하신 대로 줄바꿈 코드를 명시적으로 추가하여 깔끔하게 정리
         if day_m > 0 and day_f > 0:
             w_msg += f"<br><div style='margin-top:6px; padding-top:6px; border-top:1px dashed #E5E7E9;'><span style='color:#34495E; font-weight:600;'>골격근량: {day_m}kg<br>체지방률: {day_f}%</span></div>"
 
@@ -1036,12 +986,7 @@ elif menu == "⚙️ 정밀 대사 재진단":
     with c5: t_w_val_str = st.text_input("🎯 목표 체중 (kg)", value=str(p.get('target_weight', 55.0)))
     
     st.markdown("##### 🚶‍♂️ 일일 활동 및 식사 패턴")
-    act_options = [
-        "1단계 (주로 앉아서 생활)", 
-        "2단계 (가벼운 활동/운동)", 
-        "3단계 (보통 수준의 활동/운동)", 
-        "4단계 (육체노동 또는 강도 높은 운동)"
-    ]
+    act_options = ["1단계 (주로 앉아서 생활)", "2단계 (가벼운 활동/운동)", "3단계 (보통 수준의 활동/운동)", "4단계 (육체노동 또는 강도 높은 운동)"]
     try: act_idx = act_options.index(p.get('activity_level', '1단계 (주로 앉아서 생활)'))
     except: act_idx = 0
     
