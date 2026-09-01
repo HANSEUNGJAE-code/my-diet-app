@@ -21,15 +21,14 @@ except:
 def get_gsheet_client():
     try:
         if "GCP_CREDENTIALS" not in st.secrets: 
-            st.error("🚨 에러 1: 시크릿 금고 자체를 못 찾았거나, 'GCP_CREDENTIALS'라는 변수명이 없습니다.")
+            st.error("🚨 에러: 시크릿 금고에서 'GCP_CREDENTIALS' 키를 찾을 수 없습니다.")
             return None
-            
         creds_json = json.loads(st.secrets["GCP_CREDENTIALS"])
         scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         creds = Credentials.from_service_account_info(creds_json, scopes=scopes)
         return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"🚨 에러 2 (JSON 데이터 해독 실패): {e}")
+        st.error(f"🚨 JSON 데이터 해독 실패: {e}")
         return None
 
 # ==========================================
@@ -156,7 +155,8 @@ st.markdown("""
     
     .diet-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     .diet-table th { background-color: #34495E; color: white; padding: 10px 4px; text-align: center; font-weight: 800; font-size: 0.9rem; word-break: keep-all;}
-    .diet-table td { padding: 12px 4px; text-align: center; border-bottom: 1px solid #E5E7E9; vertical-align: middle; background-color: white; line-height: 1.5;}
+    .diet-table td { padding: 12px 4px; text-align: left; border-bottom: 1px solid #E5E7E9; vertical-align: middle; background-color: white; line-height: 1.5;}
+    .diet-table td:first-child, .diet-table td:last-child { text-align: center; }
     .badge { padding: 4px 8px; border-radius: 6px; font-weight: 900; font-size: 0.85rem; white-space: nowrap; display: inline-block;}
     
     h1 { font-size: 1.65rem !important; font-weight: 900 !important; color: #2C3E50; text-align: center; margin-bottom: 5px; white-space: nowrap; letter-spacing: -0.5px;}
@@ -244,27 +244,24 @@ def sync_from_sheets(conn):
         except: pass
     return success
 
-# 오류를 명시적으로 출력하여 디버깅이 가능하게 전면 수정한 구글 시트 업로드 함수
 def commit_and_sync(conn, table_names=None):
     conn.commit()
     client = get_gsheet_client()
     if not client: 
-        st.error("GCP 인증 클라이언트를 불러오지 못했습니다. st.secrets 설정을 확인하세요.")
-        return
+        st.error("GCP 인증 실패: st.secrets 설정 상태를 확인하세요.")
+        return False
         
     try: 
         sheet = client.open("my_diet_db")
     except Exception as e: 
-        st.error(f"구글 시트를 열 수 없습니다. 시트 이름('my_diet_db')과 서비스 계정 편집 권한을 확인하세요: {e}")
-        return
+        st.error(f"구글 시트 접근 불가: {e}")
+        return False
     
     tables = table_names if table_names else ['user_profile', 'daily_habits', 'beverage_logs', 'exercise_logs', 'diet_logs', 'daily_weight']
     
     for t in tables:
-        try: 
-            ws = sheet.worksheet(t)
-        except: 
-            ws = sheet.add_worksheet(title=t, rows="100", cols="30")
+        try: ws = sheet.worksheet(t)
+        except: ws = sheet.add_worksheet(title=t, rows="100", cols="30")
             
         try:
             df = pd.read_sql(f"SELECT * FROM {t}", conn)
@@ -272,10 +269,14 @@ def commit_and_sync(conn, table_names=None):
             if not df.empty:
                 clean_df = df.fillna("").astype(str).replace(["nan", "NaN", "None", "<NA>"], "")
                 data = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
-                # gspread 버전에 관계없이 동작할 수 있는 위치 기반 인자 사용
-                ws.update('A1', data)
+                
+                try: ws.update('A1', data)
+                except TypeError: ws.update(values=data, range_name='A1')
         except Exception as e: 
-            st.error(f"[{t}] 시트 클라우드 업로드 실패: {e}")
+            st.error(f"[{t}] 시트 업로드 실패: {e}")
+            return False
+            
+    return True
 
 if 'db_synced' not in st.session_state:
     with st.spinner("☁️ 클라우드 데이터베이스와 안전하게 동기화 중입니다..."):
@@ -366,20 +367,27 @@ if menu == "📝 일일 기록 (메인)":
     st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='date-display'>{date_display}</div>", unsafe_allow_html=True)
     
-    c.execute("SELECT date, meal_time, meal_end_time, menu_name FROM diet_logs ORDER BY date DESC, meal_time DESC, id DESC LIMIT 1")
-    latest_meal = c.fetchone()
+    # 💡 오늘 식사 중인 "모든" 메뉴 일괄 조회
+    c.execute("SELECT menu_name, meal_time FROM diet_logs WHERE date=? AND (meal_end_time IS NULL OR meal_end_time = '' OR LOWER(meal_end_time) IN ('nan', 'none', 'null'))", (today_str,))
+    ongoing_meals = c.fetchall()
     
-    if latest_meal:
-        lm_date, lm_start, lm_end, lm_name = latest_meal
-        if not lm_end or str(lm_end).strip() == "" or str(lm_end).strip().lower() in ["nan", "none", "null"]:
-            st.markdown(f"""
-            <div class='status-dashboard status-eating'>
-                <div class='status-title'>🍽️ 현재 식사 중입니다: {lm_name}</div>
-                <div class='status-time'>시작: {lm_start}</div>
-                <div class='status-msg'>식사를 마치셨다면 [📅 달력 조회] 탭에서 '식사 종료' 버튼을 눌러주세요.</div>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
+    if ongoing_meals:
+        am_names = ", ".join([m[0] for m in ongoing_meals])
+        lm_start = min([m[1] for m in ongoing_meals])
+        st.markdown(f"""
+        <div class='status-dashboard status-eating'>
+            <div class='status-title'>🍽️ 현재 식사 중입니다: {am_names}</div>
+            <div class='status-time'>최초 시작: {lm_start}</div>
+            <div class='status-msg'>식사를 마치셨다면 [📅 달력 조회] 탭에서 '일괄 식사 종료' 버튼을 눌러주세요.</div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        # 종료된 식사 중 가장 마지막 기록을 기준으로 공복 계산
+        c.execute("SELECT date, meal_end_time FROM diet_logs WHERE meal_end_time IS NOT NULL AND meal_end_time != '' AND LOWER(meal_end_time) NOT IN ('nan', 'none', 'null') ORDER BY date DESC, meal_end_time DESC LIMIT 1")
+        last_ended_meal = c.fetchone()
+        
+        if last_ended_meal:
+            lm_date, lm_end = last_ended_meal
             try:
                 last_dt = datetime.strptime(f"{lm_date} {lm_end}", "%Y-%m-%d %H:%M")
                 fasting_delta = now - last_dt
@@ -400,8 +408,8 @@ if menu == "📝 일일 기록 (메인)":
                 """, unsafe_allow_html=True)
             except:
                 st.markdown(f"<div class='status-dashboard status-wait'><div class='status-title'>타이머 대기 중</div><div class='status-msg'>시간 기록 오류.</div></div>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<div class='status-dashboard status-wait'><div class='status-title'>타이머 대기 중</div><div class='status-msg'>식사 기록이 없습니다. 첫 식사를 기록해주세요.</div></div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div class='status-dashboard status-wait'><div class='status-title'>타이머 대기 중</div><div class='status-msg'>완료된 식사 기록이 없습니다. 첫 식사를 기록해주세요.</div></div>", unsafe_allow_html=True)
 
     tab_list = ["🥗 식단 기록", "⏰ 습관", "🏋️ 운동", "📉 체중"]
     if p.get('gender') == '여성': tab_list.append("🩸 주기")
@@ -485,18 +493,19 @@ if menu == "📝 일일 기록 (메인)":
                         if c.fetchone():
                             st.error("⚠️ 방금 동일한 시간과 메뉴로 기록된 데이터가 있습니다. (중복 클릭 방지)")
                         else:
-                            c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
-                                      (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, user_start_time.strip(), "", q))
+                            with st.spinner("클라우드에 안전하게 동기화 중입니다..."):
+                                c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
+                                          (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, user_start_time.strip(), "", q))
+                                
+                                conn.commit()
+                                is_success = commit_and_sync(conn, ['diet_logs'])
                             
-                            conn.commit()
-                            commit_and_sync(conn, ['diet_logs'])
-                            
-                            st.session_state.ai_menu = ""
-                            st.session_state.ai_calories = 0
-                            for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
-                            
-                            st.session_state.meal_start_success = True
-                            st.rerun() 
+                            if is_success:
+                                st.session_state.ai_menu = ""
+                                st.session_state.ai_calories = 0
+                                for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
+                                st.session_state.meal_start_success = True
+                                st.rerun() 
                     except ValueError: 
                         st.error("수치는 반드시 숫자만 입력해주세요.")
         
@@ -521,18 +530,20 @@ if menu == "📝 일일 기록 (메인)":
         col_w1, col_w2 = st.columns(2)
         with col_w1:
             if st.button("💧 작은 컵 (+1)", use_container_width=True):
-                if w_df.empty: c.execute("INSERT INTO daily_habits (date, water_unit, water_amt) VALUES (?, '잔', 1.0)", (today_str,))
-                else: c.execute("UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 1.0 WHERE date=?", (today_str,))
-                conn.commit()
-                commit_and_sync(conn, ['daily_habits'])
+                with st.spinner("클라우드 연동 중..."):
+                    if w_df.empty: c.execute("INSERT INTO daily_habits (date, water_unit, water_amt) VALUES (?, '잔', 1.0)", (today_str,))
+                    else: c.execute("UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 1.0 WHERE date=?", (today_str,))
+                    conn.commit()
+                    commit_and_sync(conn, ['daily_habits'])
                 st.session_state.habit_msg = "💧 생수 1단위가 추가되었습니다."
                 st.rerun()
         with col_w2:
             if st.button("💧 큰 컵 (+2)", use_container_width=True):
-                if w_df.empty: c.execute("INSERT INTO daily_habits (date, water_unit, water_amt) VALUES (?, '잔', 2.0)", (today_str,))
-                else: c.execute("UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 2.0 WHERE date=?", (today_str,))
-                conn.commit() 
-                commit_and_sync(conn, ['daily_habits'])
+                with st.spinner("클라우드 연동 중..."):
+                    if w_df.empty: c.execute("INSERT INTO daily_habits (date, water_unit, water_amt) VALUES (?, '잔', 2.0)", (today_str,))
+                    else: c.execute("UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 2.0 WHERE date=?", (today_str,))
+                    conn.commit() 
+                    commit_and_sync(conn, ['daily_habits'])
                 st.session_state.habit_msg = "💧 생수 2단위가 추가되었습니다."
                 st.rerun()
                 
@@ -548,18 +559,20 @@ if menu == "📝 일일 기록 (메인)":
         col_b1, col_b2 = st.columns(2)
         with col_b1:
             if st.button("☕ 작은 캔 (+1)", use_container_width=True):
-                if b_df.empty: c.execute("INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES (?, ?, 1.0, '작은 캔')", (today_str, selected_b_name))
-                else: c.execute("UPDATE beverage_logs SET amount = amount + 1.0 WHERE id=?", (int(b_df.iloc[0]['id']),))
-                conn.commit()
-                commit_and_sync(conn, ['beverage_logs'])
+                with st.spinner("클라우드 연동 중..."):
+                    if b_df.empty: c.execute("INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES (?, ?, 1.0, '작은 캔')", (today_str, selected_b_name))
+                    else: c.execute("UPDATE beverage_logs SET amount = amount + 1.0 WHERE id=?", (int(b_df.iloc[0]['id']),))
+                    conn.commit()
+                    commit_and_sync(conn, ['beverage_logs'])
                 st.session_state.habit_msg = f"☕ [{selected_b_name}] 1단위 추가 완료."
                 st.rerun()
         with col_b2:
             if st.button("☕ 큰 캔 (+2)", use_container_width=True):
-                if b_df.empty: c.execute("INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES (?, ?, 2.0, '큰 캔')", (today_str, selected_b_name))
-                else: c.execute("UPDATE beverage_logs SET amount = amount + 2.0 WHERE id=?", (int(b_df.iloc[0]['id']),))
-                conn.commit()
-                commit_and_sync(conn, ['beverage_logs'])
+                with st.spinner("클라우드 연동 중..."):
+                    if b_df.empty: c.execute("INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES (?, ?, 2.0, '큰 캔')", (today_str, selected_b_name))
+                    else: c.execute("UPDATE beverage_logs SET amount = amount + 2.0 WHERE id=?", (int(b_df.iloc[0]['id']),))
+                    conn.commit()
+                    commit_and_sync(conn, ['beverage_logs'])
                 st.session_state.habit_msg = f"☕ [{selected_b_name}] 2단위 추가 완료."
                 st.rerun()
 
@@ -585,21 +598,23 @@ if menu == "📝 일일 기록 (메인)":
                     w_man_amt = float(water_manual_str)
                     b_man_amt = float(bev_manual_str)
                     
-                    c.execute("SELECT date FROM daily_habits WHERE date=?", (today_str,))
-                    if c.fetchone():
-                        c.execute("UPDATE daily_habits SET bed_time=?, wake_time=?, water_unit=?, water_amt=? WHERE date=?", (bed_t_str, wake_t_str, w_unit, w_man_amt, today_str))
-                    else:
-                        c.execute("INSERT INTO daily_habits (date, bed_time, wake_time, water_unit, water_amt) VALUES (?, ?, ?, ?, ?)", (today_str, bed_t_str, wake_t_str, w_unit, w_man_amt))
-                    
-                    if b_man_amt > 0:
-                        if b_df.empty: c.execute("INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES (?, ?, ?, ?)", (today_str, selected_b_name, b_man_amt, b_unit))
-                        else: c.execute("UPDATE beverage_logs SET amount=?, unit=? WHERE id=?", (b_man_amt, b_unit, int(b_df.iloc[0]['id'])))
-                    elif b_man_amt == 0 and not b_df.empty:
-                        c.execute("DELETE FROM beverage_logs WHERE id=?", (int(b_df.iloc[0]['id']),))
+                    with st.spinner("클라우드 연동 중..."):
+                        c.execute("SELECT date FROM daily_habits WHERE date=?", (today_str,))
+                        if c.fetchone():
+                            c.execute("UPDATE daily_habits SET bed_time=?, wake_time=?, water_unit=?, water_amt=? WHERE date=?", (bed_t_str, wake_t_str, w_unit, w_man_amt, today_str))
+                        else:
+                            c.execute("INSERT INTO daily_habits (date, bed_time, wake_time, water_unit, water_amt) VALUES (?, ?, ?, ?, ?)", (today_str, bed_t_str, wake_t_str, w_unit, w_man_amt))
                         
-                    conn.commit() 
-                    commit_and_sync(conn, ['daily_habits', 'beverage_logs'])
-                    st.success("데이터베이스에 완벽히 업데이트되었습니다!")
+                        if b_man_amt > 0:
+                            if b_df.empty: c.execute("INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES (?, ?, ?, ?)", (today_str, selected_b_name, b_man_amt, b_unit))
+                            else: c.execute("UPDATE beverage_logs SET amount=?, unit=? WHERE id=?", (b_man_amt, b_unit, int(b_df.iloc[0]['id'])))
+                        elif b_man_amt == 0 and not b_df.empty:
+                            c.execute("DELETE FROM beverage_logs WHERE id=?", (int(b_df.iloc[0]['id']),))
+                            
+                        conn.commit() 
+                        is_success = commit_and_sync(conn, ['daily_habits', 'beverage_logs'])
+                    if is_success:
+                        st.success("데이터베이스에 완벽히 업데이트되었습니다!")
                 except ValueError:
                     st.error("섭취량은 숫자만 입력해야 합니다.")
 
@@ -648,9 +663,10 @@ if menu == "📝 일일 기록 (메인)":
                     user_w = float(safe_get(p.get('weight'), 60.0))
                     burned_cal = int((met * 3.5 * user_w * ex_min) / 200)
                     
-                    c.execute("INSERT INTO exercise_logs (date, ex_name, duration, calories_burned) VALUES (?, ?, ?, ?)", (today_str, st.session_state.active_ex_name.split(' (')[0], ex_min, burned_cal))
-                    conn.commit() 
-                    commit_and_sync(conn, ['exercise_logs'])
+                    with st.spinner("클라우드 연동 중..."):
+                        c.execute("INSERT INTO exercise_logs (date, ex_name, duration, calories_burned) VALUES (?, ?, ?, ?)", (today_str, st.session_state.active_ex_name.split(' (')[0], ex_min, burned_cal))
+                        conn.commit() 
+                        commit_and_sync(conn, ['exercise_logs'])
                     st.session_state.ex_mins = 0
                     st.success(f"🔥 총 {burned_cal}kcal 소모 기록 완료!")
                 except ValueError: st.error("숫자만 입력해주세요.")
@@ -692,7 +708,6 @@ if menu == "📝 일일 기록 (메인)":
 
         curr_w_df = pd.read_sql(f"SELECT * FROM daily_weight WHERE date='{today_str}'", conn)
         
-        # 값이 0이어도 False로 오인해 패스하지 않도록 'in' 조건으로 전면 수정
         default_w = str(st.session_state.ai_weight) if 'ai_weight' in st.session_state else (str(curr_w_df.iloc[0]['weight']) if not curr_w_df.empty else str(p.get('weight', 60.0)))
         default_m = str(st.session_state.ai_muscle) if 'ai_muscle' in st.session_state else (str(curr_w_df.iloc[0]['skeletal_muscle']) if not curr_w_df.empty and 'skeletal_muscle' in curr_w_df.columns else "0.0")
         default_f = str(st.session_state.ai_fat_pct) if 'ai_fat_pct' in st.session_state else (str(curr_w_df.iloc[0]['body_fat_percent']) if not curr_w_df.empty and 'body_fat_percent' in curr_w_df.columns else "0.0")
@@ -714,23 +729,23 @@ if menu == "📝 일일 기록 (메인)":
                     t_w, t_m, t_f = float(today_w_str), float(muscle_str), float(fat_pct_str)
                     t_v, t_bmr = int(vf_str), int(bmr_str)
                     
-                    c.execute("SELECT id FROM daily_weight WHERE date=?", (today_str,))
-                    if c.fetchone():
-                        c.execute("UPDATE daily_weight SET weight=?, skeletal_muscle=?, body_fat_percent=?, visceral_fat=?, bmr=? WHERE date=?", (t_w, t_m, t_f, t_v, t_bmr, today_str))
-                    else:
-                        c.execute("INSERT INTO daily_weight (date, weight, skeletal_muscle, body_fat_percent, visceral_fat, bmr) VALUES (?, ?, ?, ?, ?, ?)", (today_str, t_w, t_m, t_f, t_v, t_bmr))
-                        
-                    if not is_new_user:
-                        c.execute("UPDATE user_profile SET weight = ? WHERE id = ?", (t_w, int(p['id'])))
-                        
-                    conn.commit()
-                    commit_and_sync(conn, ['daily_weight', 'user_profile'])
+                    with st.spinner("클라우드 연동 중..."):
+                        c.execute("SELECT id FROM daily_weight WHERE date=?", (today_str,))
+                        if c.fetchone():
+                            c.execute("UPDATE daily_weight SET weight=?, skeletal_muscle=?, body_fat_percent=?, visceral_fat=?, bmr=? WHERE date=?", (t_w, t_m, t_f, t_v, t_bmr, today_str))
+                        else:
+                            c.execute("INSERT INTO daily_weight (date, weight, skeletal_muscle, body_fat_percent, visceral_fat, bmr) VALUES (?, ?, ?, ?, ?, ?)", (today_str, t_w, t_m, t_f, t_v, t_bmr))
+                            
+                        if not is_new_user:
+                            c.execute("UPDATE user_profile SET weight = ? WHERE id = ?", (t_w, int(p['id'])))
+                            
+                        is_success = commit_and_sync(conn, ['daily_weight', 'user_profile'])
                     
-                    for k in ['ai_weight', 'ai_muscle', 'ai_fat_pct', 'ai_visceral_fat', 'ai_bmr']:
-                        if k in st.session_state: del st.session_state[k]
-                        
-                    st.session_state.weight_save_success = True
-                    st.rerun()
+                    if is_success:
+                        for k in ['ai_weight', 'ai_muscle', 'ai_fat_pct', 'ai_visceral_fat', 'ai_bmr']:
+                            if k in st.session_state: del st.session_state[k]
+                        st.session_state.weight_save_success = True
+                        st.rerun()
                 except ValueError: 
                     st.error("숫자만 입력해주세요.")
 
@@ -741,10 +756,11 @@ if menu == "📝 일일 기록 (메인)":
                 last_p_date = st.text_input("최근 생리 시작일 (예: 2026-08-01)", value=str(safe_get(p.get('last_period_date'), "")))
                 if st.form_submit_button("로컬 저장"):
                     try:
-                        valid_date = datetime.strptime(last_p_date.strip(), "%Y-%m-%d")
-                        c.execute("UPDATE user_profile SET last_period_date = ? WHERE id = ?", (last_p_date, int(p['id'])))
-                        conn.commit()
-                        commit_and_sync(conn, ['user_profile'])
+                        with st.spinner("클라우드 연동 중..."):
+                            valid_date = datetime.strptime(last_p_date.strip(), "%Y-%m-%d")
+                            c.execute("UPDATE user_profile SET last_period_date = ? WHERE id = ?", (last_p_date, int(p['id'])))
+                            conn.commit()
+                            commit_and_sync(conn, ['user_profile'])
                         st.success("저장 완료.")
                     except ValueError: st.error("날짜 형식을 맞춰주세요.")
 
@@ -834,19 +850,20 @@ elif menu == "📅 달력 조회":
     
     st.markdown(f"<div class='micro-box'>🔬 <b>미량 영양소 추적:</b> 나트륨 <b>{int(e_sodium)}mg</b> (권장 2000mg 이하) &nbsp; | &nbsp; 식이섬유 <b>{int(e_fiber)}g</b> (권장 25g 이상)</div>", unsafe_allow_html=True)
 
-    c.execute(f"SELECT id, menu_name, meal_time FROM diet_logs WHERE date='{view_date_str}' AND (meal_end_time IS NULL OR meal_end_time = '' OR LOWER(meal_end_time) IN ('nan', 'none', 'null')) ORDER BY id DESC LIMIT 1")
-    active_meal = c.fetchone()
+    # 💡 조회일자 기준, 종료되지 않은 '모든' 식사를 식별
+    c.execute(f"SELECT id, menu_name, meal_time FROM diet_logs WHERE date='{view_date_str}' AND (meal_end_time IS NULL OR meal_end_time = '' OR LOWER(meal_end_time) IN ('nan', 'none', 'null'))")
+    active_meals = c.fetchall()
     
     st.markdown("##### 🍽 식단 기록 목록")
-    if active_meal:
-        am_id, am_name, am_start = active_meal
-        st.markdown(f"<div style='background:#FFF3CD; padding:8px 12px; border-radius:6px; border-left:4px solid #F1C40F; margin-bottom:12px;'><span style='font-size:0.9rem; font-weight:bold; color:#7D6608;'>⏳ 현재 진행 중: {am_name} (시작: {am_start} ~ )</span></div>", unsafe_allow_html=True)
+    if active_meals:
+        am_names = ", ".join([am[1] for am in active_meals])
+        st.markdown(f"<div style='background:#FFF3CD; padding:8px 12px; border-radius:6px; border-left:4px solid #F1C40F; margin-bottom:12px;'><span style='font-size:0.9rem; font-weight:bold; color:#7D6608;'>⏳ 현재 진행 중: {am_names}</span></div>", unsafe_allow_html=True)
 
-    table_html = "<table class='diet-table'><tr><th style='width:25%;'>시간</th><th style='width:50%;'>메뉴</th><th style='width:25%;'>평가</th></tr>"
+    table_html = "<table class='diet-table'><tr><th style='width:25%;'>시간</th><th style='width:50%;'>메뉴 (상세영양소)</th><th style='width:25%;'>평가</th></tr>"
     if logs.empty: table_html += "<tr><td colspan='3' style='color:#7F8C8D; padding:20px 0;'>기록된 식단이 없습니다.</td></tr>"
     else:
         for idx, row in logs.iterrows():
-            q = str(row['quality'])
+            q = str(row.get('quality', ''))
             if "좋은" in q: badge = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 좋은 음식</span>"
             elif "주의" in q: badge = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의 음식</span>"
             else: badge = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험 음식</span>"
@@ -856,23 +873,27 @@ elif menu == "📅 달력 조회":
             else:
                 end_t = "<span style='color:#E74C3C;'>(식사 중)</span>"
                 
-            table_html += f"<tr><td><b>{row['meal_time']}</b><br><span style='font-size:0.75rem; color:#7F8C8D;'>{end_t}</span></td><td><b style='color:#2C3E50;'>{row['menu_name']}</b></td><td>{badge}</td></tr>"
+            # 💡 하드코딩되었던 UI를 확장하여 상세 칼로리 및 탄단지 표출 로직 적용
+            macro_info = f"<br><span style='font-size:0.8rem; color:#7F8C8D;'>{int(row.get('calories', 0))}kcal | 탄 {int(row.get('carb', 0))}g 단 {int(row.get('protein', 0))}g 지 {int(row.get('fat', 0))}g</span>"
+            table_html += f"<tr><td><b>{row['meal_time']}</b><br><span style='font-size:0.75rem; color:#7F8C8D;'>{end_t}</span></td><td><b style='color:#2C3E50;'>{row['menu_name']}</b>{macro_info}</td><td>{badge}</td></tr>"
     table_html += "</table>"
     st.markdown(table_html, unsafe_allow_html=True)
     
-    if active_meal:
+    if active_meals:
         col_blank, col_end_btn = st.columns([7, 3])
         with col_end_btn:
-            if st.button("🏁 식사 종료", key="end_meal_btn_bottom", type="primary", use_container_width=True):
-                now_str = now.strftime("%H:%M")
-                c.execute("UPDATE diet_logs SET meal_end_time=? WHERE id=?", (now_str, am_id))
-                conn.commit()
-                commit_and_sync(conn, ['diet_logs', 'daily_habits', 'beverage_logs', 'exercise_logs', 'daily_weight'])
+            if st.button("🏁 일괄 식사 종료", key="end_meal_btn_bottom", type="primary", use_container_width=True):
+                with st.spinner("클라우드와 동기화 중입니다..."):
+                    now_str = now.strftime("%H:%M")
+                    # 💡 단일 ID 지정(LIMIT 1) 업데이트가 아닌, 현재 진행 중인 '모든' 식사를 일괄 종료
+                    c.execute("UPDATE diet_logs SET meal_end_time=? WHERE date=? AND (meal_end_time IS NULL OR meal_end_time='' OR LOWER(meal_end_time) IN ('nan', 'none', 'null'))", (now_str, view_date_str))
+                    conn.commit()
+                    commit_and_sync(conn, ['diet_logs', 'daily_habits', 'beverage_logs', 'exercise_logs', 'daily_weight'])
                 st.session_state.meal_end_success = True
                 st.rerun()
 
     if st.session_state.get("meal_end_success"):
-        st.success("✅ 식사가 종료 되었습니다. 공복 타이머가 가동됩니다.")
+        st.success("✅ 진행 중인 모든 식사가 종료되었습니다. 공복 타이머가 가동됩니다.")
         st.session_state.meal_end_success = False
     
     if not logs.empty:
@@ -881,8 +902,9 @@ elif menu == "📅 달력 조회":
                 del_options = {f"[{row['meal_time']}] {row['menu_name']} (고유번호: {row['db_rowid']})": row['db_rowid'] for idx, row in logs.iterrows()}
                 selected_del_key = st.selectbox("삭제할 식단 선택", options=list(del_options.keys()))
                 if st.form_submit_button("영구 삭제"):
-                    c.execute("DELETE FROM diet_logs WHERE rowid = ?", (del_options[selected_del_key],))
-                    commit_and_sync(conn, ['diet_logs'])
+                    with st.spinner("삭제 및 클라우드 연동 중..."):
+                        c.execute("DELETE FROM diet_logs WHERE rowid = ?", (del_options[selected_del_key],))
+                        commit_and_sync(conn, ['diet_logs'])
                     st.rerun()
 
     st.markdown("##### 🏃 운동 기록 목록")
@@ -900,8 +922,9 @@ elif menu == "📅 달력 조회":
                 ex_del_opts = {f"{row['ex_name']} ({row['duration']}분)": row['id'] for idx, row in ex_df.iterrows()}
                 selected_ex_key = st.selectbox("삭제할 운동 선택", options=list(ex_del_opts.keys()))
                 if st.form_submit_button("영구 삭제"):
-                    c.execute("DELETE FROM exercise_logs WHERE id = ?", (ex_del_opts[selected_ex_key],))
-                    commit_and_sync(conn, ['exercise_logs'])
+                    with st.spinner("삭제 및 클라우드 연동 중..."):
+                        c.execute("DELETE FROM exercise_logs WHERE id = ?", (ex_del_opts[selected_ex_key],))
+                        commit_and_sync(conn, ['exercise_logs'])
                     st.rerun()
 
     st.markdown("##### 📋 습관 및 체중 피드백")
@@ -1073,16 +1096,17 @@ elif menu == "⚙️ 정밀 대사 재진단":
             
             t_cal, t_c, t_p, t_f, _ = generate_master_feedback(p_data)
             
-            c.execute("DELETE FROM user_profile")
-            c.execute("""INSERT INTO user_profile 
-                         (gender, age, height, weight, target_weight, activity_level, exercise_type, 
-                          target_calories, target_carb, target_protein, target_fat, sleep_bed_hr, sleep_wake_hr,
-                          meal_count, first_meal_hr, last_meal_hr, carb_type, snack_type, snack_freq, snack_time, snack_amt, 
-                          water_unit, water_cnt, bev_type, bev_unit, bev_cnt) 
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", 
-                      (g_val, a_val, h_val, w_val, t_w_val, act_val, exc_val, t_cal, t_c, t_p, t_f, bed_hr, wake_hr, meal_cnt, f_hr, l_hr, carb_v, snack_v, snack_freq, snack_time, snack_amt, w_unit, w_cnt, b_type, b_unit, b_cnt))
-            
-            commit_and_sync(conn, ['user_profile'])
+            with st.spinner("클라우드와 동기화 중입니다..."):
+                c.execute("DELETE FROM user_profile")
+                c.execute("""INSERT INTO user_profile 
+                             (gender, age, height, weight, target_weight, activity_level, exercise_type, 
+                              target_calories, target_carb, target_protein, target_fat, sleep_bed_hr, sleep_wake_hr,
+                              meal_count, first_meal_hr, last_meal_hr, carb_type, snack_type, snack_freq, snack_time, snack_amt, 
+                              water_unit, water_cnt, bev_type, bev_unit, bev_cnt) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", 
+                          (g_val, a_val, h_val, w_val, t_w_val, act_val, exc_val, t_cal, t_c, t_p, t_f, bed_hr, wake_hr, meal_cnt, f_hr, l_hr, carb_v, snack_v, snack_freq, snack_time, snack_amt, w_unit, w_cnt, b_type, b_unit, b_cnt))
+                
+                commit_and_sync(conn, ['user_profile'])
             st.success("✅ 정밀 대사 진단 데이터가 구글 클라우드에 완벽하게 저장되었습니다! 달력 조회 및 리포트 탭에 정상 연동되었습니다.")
             st.balloons()
             
