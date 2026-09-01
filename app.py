@@ -32,6 +32,16 @@ def get_gsheet_client():
         return None
 
 # ==========================================
+# 스마트 시간 변환기 (콜론 자동 삽입)
+# ==========================================
+def format_time_str(t_str):
+    t = str(t_str).strip().replace(":", "").replace(" ", "")
+    if not t or not t.isdigit(): return str(t_str)
+    if len(t) <= 2: return f"{t.zfill(2)}:00"
+    elif len(t) == 3: return f"0{t[0]}:{t[1:]}"
+    else: return f"{t[:2]}:{t[2:4]}"
+
+# ==========================================
 # AI 분석 로직
 # ==========================================
 def analyze_food_image(img_bytes, api_key):
@@ -46,8 +56,9 @@ def analyze_food_image(img_bytes, api_key):
     optimized_img = Image.open(img_buffer)
     genai.configure(api_key=api_key)
     
+    # 💡 최신 다중 추론 모델로 업그레이드
     model = genai.GenerativeModel(
-        model_name='gemini-3.5-flash-lite', 
+        model_name='gemini-3.7-flash', 
         generation_config={"response_mime_type": "application/json", "temperature": 0.0}
     )
     
@@ -79,8 +90,9 @@ def analyze_atflee_pdf(pdf_bytes, api_key):
     optimized_img = Image.open(img_buffer)
     genai.configure(api_key=api_key)
     
+    # 💡 최신 다중 추론 모델로 업그레이드
     model = genai.GenerativeModel(
-        model_name='gemini-3.5-flash-lite', 
+        model_name='gemini-3.7-flash', 
         generation_config={"response_mime_type": "application/json", "temperature": 0.0}
     )
     
@@ -110,9 +122,8 @@ st.markdown("""
         font-size: 1.3rem !important; font-weight: 900 !important; color: #2C3E50 !important; padding: 5px 0;
     }
     
-    /* 화면 하단 여백 및 고아/과부 단어 방지 최적화 */
     .block-container { padding-top: 1.5rem !important; padding-bottom: 28mm !important; }
-    p, span, div { word-break: keep-all; }
+    p, span, div, th, td { word-break: keep-all; }
     
     .stTextInput input, .stSelectbox div { border-radius: 8px !important; font-weight: 600 !important; }
     [data-testid="stDecoration"] { display: none; }
@@ -145,7 +156,6 @@ st.markdown("""
     .report-title { font-size: 1.2rem; font-weight: 900; color: #1A5276; margin-top: 25px; margin-bottom: 15px; border-bottom: 2px solid #1ABC9C; padding-bottom: 6px; letter-spacing: -0.3px;}
     .report-p { font-size: 1.05rem; line-height: 1.8; color: #34495E; margin-bottom: 15px; }
     
-    /* Flexbox 오토 스트레치 레이아웃 */
     .dashboard-grid { display: flex; justify-content: space-between; gap: 10px; margin-top:10px; margin-bottom: 15px;}
     .macro-box { flex: 1; padding: 15px 5px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     .macro-title { font-size: 0.9rem; font-weight: bold; color: #7F8C8D; margin-bottom: 5px;}
@@ -162,7 +172,6 @@ st.markdown("""
     .diet-table td:first-child, .diet-table td:last-child { text-align: center; }
     .badge { padding: 4px 8px; border-radius: 6px; font-weight: 900; font-size: 0.85rem; white-space: nowrap; display: inline-block;}
     
-    /* 맥박 애니메이션 (진행 중인 식사) */
     @keyframes pulse-bg {
         0% { background-color: #FFF3CD; }
         50% { background-color: #FDEBD0; }
@@ -303,7 +312,7 @@ date_display = f"{now.strftime('%y - %m - %d')} ( {wd_map[now.weekday()]} )"
 def safe_get(val, default_val): return val if pd.notna(val) else default_val
 
 # ==========================================
-# 3. 진단 리포트 생성 함수 (앳플리 데이터 연동 완비)
+# 3. 진단 리포트 생성 함수
 # ==========================================
 def generate_master_feedback(p):
     h = float(safe_get(p.get('height'), 160.0))
@@ -378,7 +387,6 @@ if menu == "📝 일일 기록 (메인)":
     st.markdown("<h1>🥑 Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='date-display'>{date_display}</div>", unsafe_allow_html=True)
     
-    # 💡 오늘 식사 중인 "모든" 메뉴 일괄 조회
     c.execute("SELECT menu_name, meal_time FROM diet_logs WHERE date=? AND (meal_end_time IS NULL OR meal_end_time = '' OR LOWER(meal_end_time) IN ('nan', 'none', 'null'))", (today_str,))
     ongoing_meals = c.fetchall()
     
@@ -393,7 +401,6 @@ if menu == "📝 일일 기록 (메인)":
         </div>
         """, unsafe_allow_html=True)
     else:
-        # 종료된 식사 중 가장 마지막 기록을 기준으로 공복 계산
         c.execute("SELECT date, meal_end_time FROM diet_logs WHERE meal_end_time IS NOT NULL AND meal_end_time != '' AND LOWER(meal_end_time) NOT IN ('nan', 'none', 'null') ORDER BY date DESC, meal_end_time DESC LIMIT 1")
         last_ended_meal = c.fetchone()
         
@@ -428,18 +435,26 @@ if menu == "📝 일일 기록 (메인)":
     
     with tabs[0]: 
         st.markdown("##### ■ 새로운 식사 시작")
-        user_start_time = st.text_input("식사 시작 시각 (예: 12:00)", value=now.strftime("%H:%M"))
+        raw_start_time = st.text_input("식사 시작 시각 (예: 1200 입력 시 12:00 자동변환)", value=now.strftime("%H%M"))
+        user_start_time = format_time_str(raw_start_time)
         meal_type = ""
         
+        if 'camera_on' not in st.session_state: st.session_state.camera_on = False
         if 'ai_menu' not in st.session_state:
             st.session_state.ai_menu = ""
             st.session_state.ai_calories = 0
             for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
             st.session_state.ai_quality = "좋은 음식"
             
-        input_mode = st.radio("▶ 기록 방식", ["📷 스마트 카메라", "✍️ 직접 입력"], horizontal=True)
-        
-        if input_mode == "📷 스마트 카메라":
+        if not st.session_state.camera_on:
+            if st.button("📷 스마트 카메라 켜기", use_container_width=True):
+                st.session_state.camera_on = True
+                st.rerun()
+        else:
+            if st.button("❌ 카메라 닫기", use_container_width=True):
+                st.session_state.camera_on = False
+                st.rerun()
+                
             uploaded_file = st.camera_input("알아서 인식합니다", label_visibility="collapsed")
             if uploaded_file is not None:
                 if st.button("🔍 AI 심층 영양소 분석", use_container_width=True):
@@ -463,6 +478,7 @@ if menu == "📝 일일 기록 (메인)":
                             except Exception as e: st.error(f"통신 에러: {e}")
 
         with st.form("diet_tracking_form"):
+            st.markdown("<span style='font-size:0.85rem; color:#7F8C8D;'>※ AI가 판독한 결과를 확인하고 저장합니다. 수정이 필요하면 직접 수치를 변경하세요.</span>", unsafe_allow_html=True)
             c01, c02 = st.columns(2)
             with c01: menu_name = st.text_input("메뉴 이름", st.session_state.ai_menu)
             with c02: calories_v = st.text_input("총 칼로리(kcal)", value=str(st.session_state.ai_calories))
@@ -489,22 +505,21 @@ if menu == "📝 일일 기록 (메인)":
                     m_name = menu_name.strip() if menu_name.strip() else "직접 입력 식단"
                     q = st.session_state.ai_quality
                     
-                    c.execute('SELECT id FROM diet_logs WHERE date=? AND meal_time=? AND menu_name=?', (today_str, user_start_time.strip(), m_name))
+                    c.execute('SELECT id FROM diet_logs WHERE date=? AND meal_time=? AND menu_name=?', (today_str, user_start_time, m_name))
                     if c.fetchone():
                         st.error("⚠️ 방금 동일한 시간과 메뉴로 기록된 데이터가 있습니다.")
                     else:
                         with st.spinner("클라우드에 안전하게 동기화 중입니다..."):
                             c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
-                                      (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, user_start_time.strip(), "", q))
+                                      (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, user_start_time, "", q))
                             
                             conn.commit()
-                            is_success = commit_and_sync(conn, ['diet_logs'])
+                            commit_and_sync(conn, ['diet_logs'])
                         
-                        if is_success:
-                            st.session_state.ai_menu = ""
-                            st.session_state.ai_calories = 0
-                            for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
-                            st.toast("✅ 저장이 완료되었습니다! 식사 종료 시 캘린더 탭을 이용하세요.")
+                        st.session_state.ai_menu = ""
+                        st.session_state.ai_calories = 0
+                        for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
+                        st.toast("✅ 저장이 완료되었습니다! 식사 종료 시 캘린더 탭을 이용하세요.")
                 except ValueError: 
                     st.error("수치는 반드시 숫자만 입력해주세요.")
 
@@ -571,8 +586,12 @@ if menu == "📝 일일 기록 (메인)":
         with st.form("habit_tracker_form"):
             st.markdown("##### # 습관 데이터 수기 변경 및 일괄 수정")
             ch1, ch2 = st.columns(2)
-            with ch1: bed_t_str = st.text_input("취침 시간 (미입력 시 비워두기)", value=curr_bed)
-            with ch2: wake_t_str = st.text_input("기상 시간", value=curr_wake)
+            with ch1: 
+                raw_bed = st.text_input("취침 시간 (예: 2330)", value=curr_bed.replace(":", "") if curr_bed else "")
+                bed_t_str = format_time_str(raw_bed)
+            with ch2: 
+                raw_wake = st.text_input("기상 시간 (예: 0700)", value=curr_wake.replace(":", "") if curr_wake else "")
+                wake_t_str = format_time_str(raw_wake)
             
             cw1, cw2 = st.columns(2)
             w_idx = ["잔", "컵", "리터(L)"].index(curr_w_un) if curr_w_un in ["잔", "컵", "리터(L)"] else 0
@@ -1043,13 +1062,21 @@ elif menu == "⚙️ 정밀 대사 재진단":
     exc_val = st.selectbox("해당 단계 주요 훈련 종목", exc_options, index=exc_idx)
     
     cs1, cs2 = st.columns(2)
-    with cs1: bed_hr = st.text_input("평균 취침 시간 (예: 23:30)", value=p.get('sleep_bed_hr', '23:30'))
-    with cs2: wake_hr = st.text_input("평균 기상 시간 (예: 07:00)", value=p.get('sleep_wake_hr', '07:00'))
+    with cs1: 
+        raw_bed_hr = st.text_input("평균 취침 시간 (예: 2330)", value=p.get('sleep_bed_hr', '23:30').replace(":", ""))
+        bed_hr = format_time_str(raw_bed_hr)
+    with cs2: 
+        raw_wake_hr = st.text_input("평균 기상 시간 (예: 0700)", value=p.get('sleep_wake_hr', '07:00').replace(":", ""))
+        wake_hr = format_time_str(raw_wake_hr)
     
     cm1, cm2, cm3 = st.columns(3)
     with cm1: meal_cnt = st.selectbox("식사 횟수", ["1끼", "2끼", "3끼", "4끼 이상"], index=2)
-    with cm2: f_hr = st.text_input("첫 식사 시간", value=p.get('first_meal_hr', '08:00'))
-    with cm3: l_hr = st.text_input("마지막 식사 시간", value=p.get('last_meal_hr', '19:00'))
+    with cm2: 
+        raw_f_hr = st.text_input("첫 식사 시간", value=p.get('first_meal_hr', '08:00').replace(":", ""))
+        f_hr = format_time_str(raw_f_hr)
+    with cm3: 
+        raw_l_hr = st.text_input("마지막 식사 시간", value=p.get('last_meal_hr', '19:00').replace(":", ""))
+        l_hr = format_time_str(raw_l_hr)
     
     carb_v = st.selectbox("메인 식단 베이스", ["채소 위주 샐러드", "곡물 샐러드볼", "육류 샐러드", "목초사육 소고기/연어", "비건 식단", "다이어트 정식", "일반 한식 백반", "면류/배달음식"], index=5)
     
