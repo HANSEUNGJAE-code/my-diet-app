@@ -657,7 +657,7 @@ if menu == "📝 일일 기록 (메인)":
                         conn.commit() 
                         commit_and_sync(conn, ['exercise_logs'])
                     st.session_state.ex_mins = 0
-                    st.toast(f"✅ 총 {burned_cal}kcal 소모 기록 완료!")
+                    st.toast(f"🔥 총 {burned_cal}kcal 소모 기록 완료!")
                 except ValueError: st.error("숫자만 입력해주세요.")
 
     with tabs[3]:
@@ -832,7 +832,6 @@ elif menu == "📅 달력 조회":
     
     st.markdown(f"<div class='micro-box'>🔬 <b>미량 영양소 추적:</b> 나트륨 <b>{int(e_sodium)}mg</b> (권장 2000mg 이하) &nbsp; | &nbsp; 식이섬유 <b>{int(e_fiber)}g</b> (권장 25g 이상)</div>", unsafe_allow_html=True)
 
-    # 💡 조회일자 기준, 진행 중인 식사 모두 펄스 애니메이션 적용
     c.execute(f"SELECT id, menu_name, meal_time FROM diet_logs WHERE date='{view_date_str}' AND (meal_end_time IS NULL OR meal_end_time = '' OR LOWER(meal_end_time) IN ('nan', 'none', 'null'))")
     active_meals = c.fetchall()
     
@@ -855,8 +854,7 @@ elif menu == "📅 달력 조회":
             else:
                 end_t = "<span style='color:#E74C3C;'>(식사 중)</span>"
                 
-            # 💡 UI 가독성 극대화: 줄바꿈 및 아이콘 추가
-            macro_info = f"<br><span style='font-size:0.85rem; color:#7F8C8D; display:block; margin-top:4px;'>🔥 {int(row.get('calories', 0))} kcal<br>🌾 탄: {int(row.get('carb', 0))}g &nbsp;|&nbsp; 🥩 단: {int(row.get('protein', 0))}g &nbsp;|&nbsp; 🧈 지: {int(row.get('fat', 0))}g</span>"
+            macro_info = f"<br><span style='font-size:0.85rem; color:#7F8C8D; display:block; margin-top:4px;'>🔥 {int(row.get('calories', 0))} kcal<br>🌾 탄: {int(row.get('carb', 0))}g<br>🥩 단: {int(row.get('protein', 0))}g<br>🧈 지: {int(row.get('fat', 0))}g</span>"
             table_html += f"<tr><td><b>{row['meal_time']}</b><br><span style='font-size:0.75rem; color:#7F8C8D;'>{end_t}</span></td><td><b style='color:#2C3E50;'>{row['menu_name']}</b>{macro_info}</td><td>{badge}</td></tr>"
     table_html += "</table>"
     st.markdown(table_html, unsafe_allow_html=True)
@@ -905,7 +903,6 @@ elif menu == "📅 달력 조회":
         w_amt = h_row['water_amt'] if pd.notna(h_row['water_amt']) else 0.0
         w_un = h_row['water_unit'] if pd.notna(h_row['water_unit']) else "잔"
         
-        # 💡 프로필 목표 연동 수면 피드백
         if bed_str and wake_str:
             try:
                 t_b, t_w = datetime.strptime(bed_str.strip(), "%H:%M"), datetime.strptime(wake_str.strip(), "%H:%M")
@@ -922,26 +919,36 @@ elif menu == "📅 달력 조회":
                     target_hrs = round(tgt_mins / 60, 1)
                 except: target_hrs = 7.5
 
-                diff_hrs = round(sleep_hrs - target_hrs, 1)
+                s_msg = f"성인 권장량(7~8시간) 및 개인 목표({target_hrs}시간) 대비 <b>{sleep_hrs}시간</b> 수면. "
                 
-                if sleep_hrs >= target_hrs: 
+                if sleep_hrs >= 7.0: 
                     s_badge = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 달성</span>"
-                    s_msg = f"목표 수면({target_hrs}시간) 충족. <b>{sleep_hrs}시간</b> 수면으로 대사 회복이 양호합니다."
-                elif sleep_hrs >= target_hrs - 1.5: 
+                    s_msg += "대사 회복과 체지방 연소에 가장 이상적인 상태입니다."
+                elif sleep_hrs >= 6.0: 
                     s_badge = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의</span>"
-                    s_msg = f"목표 수면({target_hrs}시간) 대비 <b>{abs(diff_hrs)}시간 부족</b>. 체지방 연소 효율이 떨어질 수 있습니다."
+                    s_msg += "수면이 부족하면 식욕 억제 호르몬이 감소하여 폭식 위험이 커집니다."
                 else: 
                     s_badge = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>"
-                    s_msg = f"목표 수면 대비 <b>{abs(diff_hrs)}시간 극심한 부족</b>. 코르티솔 분비로 인한 대사 저하에 주의하세요."
+                    s_msg += "절대적인 수면 부족입니다. 코르티솔 분비 폭발로 대사가 저하되고 지방이 축적됩니다."
                     
                 habit_table += f"<tr><td><b>수면</b><br><span style='font-size:0.75rem; color:#7F8C8D;'>{bed_str}~{wake_str}</span></td><td>{s_badge}</td><td style='text-align:left; font-size:0.85rem;'>{s_msg}</td></tr>"
             except: pass
 
-        # 💡 프로필 목표 연동 수분 피드백
         if w_amt > 0:
-            target_water = float(safe_get(p.get('water_cnt'), 8.0))
-            w_badge = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>" if w_amt >= target_water else ("<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의</span>" if w_amt >= target_water * 0.7 else "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>")
-            w_msg = f"일일 목표 {target_water}{w_un} 중 <b>{w_amt}{w_un}</b> 섭취. " + ("수분 대사 원활." if w_amt >= target_water else f"달성까지 <b>{round(target_water - w_amt, 1)}{w_un}</b> 부족합니다.")
+            target_water = float(safe_get(p.get('water_cnt'), 10.0))
+            w_badge = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 달성</span>" if w_amt >= target_water else ("<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의</span>" if w_amt >= target_water * 0.7 else "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>")
+            
+            w_msg = f"개인 목표 {target_water}{w_un} 중 <b>{w_amt}{w_un}</b> 섭취. "
+            if w_un in ["잔", "컵"]:
+                est_vol = int(w_amt * 200)
+                w_msg += f"(약 {est_vol}ml). "
+                if est_vol < 2000:
+                    w_msg += f"하루 권장량 2L(2000ml) 기준 <b>{2000 - est_vol}ml</b>가 더 필요합니다."
+                else:
+                    w_msg += "권장량(2L)을 충족했습니다."
+            else:
+                w_msg += "수분 대사 원활." if w_amt >= target_water else "수분 보충이 필요합니다."
+                
             habit_table += f"<tr><td><b>수분</b></td><td>{w_badge}</td><td style='text-align:left; font-size:0.85rem;'>{w_msg}</td></tr>"
 
     for idx, b_row in bev_df.iterrows():
