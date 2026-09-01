@@ -11,7 +11,7 @@ import io
 import pypdfium2 as pdfium
 
 # ==========================================
-# 0. 🔑 API 키 및 클라우드 인증 금고
+# 0. API 키 및 클라우드 인증 금고
 # ==========================================
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -51,13 +51,12 @@ def analyze_food_image(img_bytes, api_key):
         generation_config={"response_mime_type": "application/json", "temperature": 0.0}
     )
     
-    prompt = '''당신은 식품 영양 분석 전문가이자 광학 문자 인식(OCR) 시스템입니다.
-    사진을 분석하여 아래의 [절대 행동 지침]을 엄격히 준수한 후 JSON으로만 결과를 출력하십시오.
+    prompt = '''당신은 식품 영양 분석 전문가입니다. 사진을 분석하여 [절대 행동 지침]을 엄격히 준수한 후 JSON으로만 결과를 출력하십시오.
     
     [절대 행동 지침]
-    1. 텍스트 판독(OCR) 최우선: 사진 내에 제품명, 원재료명, 영양성분표 등의 글자가 있다면 시각적 형태나 색상보다 글자를 무조건 1순위 팩트로 신뢰하십시오.
-    2. 시각적 착시 및 추측 금지: 글자 판독이 불가능한 경우에만 시각적 추론을 사용하되 가장 보편적인 식재료로 보수적으로 판단하십시오.
-    3. 객관적 영양 수치 매핑: 판독된 정확한 제품명 또는 메뉴를 바탕으로, 시중의 표준 데이터베이스에 근접한 수치를 입력하십시오. 알 수 없는 수치는 0처리.
+    1. 부피 및 무게 추정 (최우선): 그릇의 크기나 주변 사물을 기준으로 음식의 실제 양(부피)을 정밀 추정하십시오. 똑같은 메뉴라도 사진상 양이 1.5배 많다면 칼로리와 영양소도 1.5배로 계산해야 합니다. 기계적인 1인분 수치 사용을 금지합니다.
+    2. 양념 및 조리법 반영: 육안으로 보기에 양념(갈비양념, 불고기 등)이 되어 있거나 소스가 발라져 있다면, 순수 원육과 달리 탄수화물과 당류 수치를 반드시 추가하여 계산하십시오.
+    3. 객관적 영양 수치 매핑: 추정된 양과 조리법을 바탕으로 표준 데이터베이스에 근접한 수치를 도출하십시오.
     4. 출력 형식: 마크다운 기호 없이 순수 JSON 포맷만 반환.
     
     출력 JSON 키 구조:
@@ -99,7 +98,7 @@ def analyze_atflee_pdf(pdf_bytes, api_key):
 # ==========================================
 # 1. 모바일 최적화 및 직관적 UI CSS
 # ==========================================
-st.set_page_config(page_title="브쌤's Diet 비서", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Diet 비서", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
@@ -111,7 +110,10 @@ st.markdown("""
         font-size: 1.3rem !important; font-weight: 900 !important; color: #2C3E50 !important; padding: 5px 0;
     }
     
-    .block-container { padding-top: 1.5rem !important; padding-bottom: 2rem !important; }
+    /* 화면 하단 여백 및 고아/과부 단어 방지 최적화 */
+    .block-container { padding-top: 1.5rem !important; padding-bottom: 28mm !important; }
+    p, span, div { word-break: keep-all; }
+    
     .stTextInput input, .stSelectbox div { border-radius: 8px !important; font-weight: 600 !important; }
     [data-testid="stDecoration"] { display: none; }
     
@@ -141,10 +143,11 @@ st.markdown("""
     
     .report-box { background-color:#FFFFFF; padding:25px; border-radius:12px; border:1px solid #E5E7E9; margin-top:15px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
     .report-title { font-size: 1.2rem; font-weight: 900; color: #1A5276; margin-top: 25px; margin-bottom: 15px; border-bottom: 2px solid #1ABC9C; padding-bottom: 6px; letter-spacing: -0.3px;}
-    .report-p { font-size: 1.05rem; line-height: 1.8; color: #34495E; margin-bottom: 15px; word-break: keep-all; }
+    .report-p { font-size: 1.05rem; line-height: 1.8; color: #34495E; margin-bottom: 15px; }
     
-    .dashboard-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top:10px; margin-bottom: 15px;}
-    .macro-box { padding: 15px 5px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    /* Flexbox 오토 스트레치 레이아웃 */
+    .dashboard-grid { display: flex; justify-content: space-between; gap: 10px; margin-top:10px; margin-bottom: 15px;}
+    .macro-box { flex: 1; padding: 15px 5px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     .macro-title { font-size: 0.9rem; font-weight: bold; color: #7F8C8D; margin-bottom: 5px;}
     .macro-val { font-size: 1.1rem; font-weight: 900; color: #2C3E50;}
     .macro-diff { font-size: 0.85rem; font-weight: bold; margin-top: 5px; }
@@ -154,10 +157,18 @@ st.markdown("""
     .micro-box { background-color:#FDFEFE; padding:10px; border-radius:8px; border:1px dashed #BDC3C7; text-align:center; font-size:0.9rem; color:#34495E; margin-bottom: 20px;}
     
     .diet-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-    .diet-table th { background-color: #34495E; color: white; padding: 10px 4px; text-align: center; font-weight: 800; font-size: 0.9rem; word-break: keep-all;}
+    .diet-table th { background-color: #34495E; color: white; padding: 10px 4px; text-align: center; font-weight: 800; font-size: 0.9rem; }
     .diet-table td { padding: 12px 4px; text-align: left; border-bottom: 1px solid #E5E7E9; vertical-align: middle; background-color: white; line-height: 1.5;}
     .diet-table td:first-child, .diet-table td:last-child { text-align: center; }
     .badge { padding: 4px 8px; border-radius: 6px; font-weight: 900; font-size: 0.85rem; white-space: nowrap; display: inline-block;}
+    
+    /* 맥박 애니메이션 (진행 중인 식사) */
+    @keyframes pulse-bg {
+        0% { background-color: #FFF3CD; }
+        50% { background-color: #FDEBD0; }
+        100% { background-color: #FFF3CD; }
+    }
+    .ongoing-meal { animation: pulse-bg 2s infinite; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #F1C40F; margin-bottom: 12px; }
     
     h1 { font-size: 1.65rem !important; font-weight: 900 !important; color: #2C3E50; text-align: center; margin-bottom: 5px; white-space: nowrap; letter-spacing: -0.5px;}
     .date-display { text-align:center; font-size:1.15rem; font-weight:900; color:#7F8C8D; margin-bottom:20px; }
@@ -350,7 +361,7 @@ p_df = pd.read_sql("SELECT * FROM user_profile ORDER BY id DESC LIMIT 1", conn)
 is_new_user = p_df.empty
 
 if is_new_user:
-    st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
+    st.markdown("<h1>🥑 Diet 일지</h1>", unsafe_allow_html=True)
     st.warning("⚠️ 최초 1회 [정밀 대사 진단]을 완료해야 앱 메뉴가 활성화됩니다.")
     menu = "⚙️ 정밀 대사 재진단"
     p = {}  
@@ -364,7 +375,7 @@ else:
 # 5. 페이지 렌더링
 # ==========================================
 if menu == "📝 일일 기록 (메인)":
-    st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
+    st.markdown("<h1>🥑 Diet 일지</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='date-display'>{date_display}</div>", unsafe_allow_html=True)
     
     # 💡 오늘 식사 중인 "모든" 메뉴 일괄 조회
@@ -416,35 +427,25 @@ if menu == "📝 일일 기록 (메인)":
     tabs = st.tabs(tab_list)
     
     with tabs[0]: 
-        st.markdown("##### 🍽️ 새로운 식사 시작 (입력)")
+        st.markdown("##### ■ 새로운 식사 시작")
         user_start_time = st.text_input("식사 시작 시각 (예: 12:00)", value=now.strftime("%H:%M"))
         meal_type = ""
         
-        if 'camera_on' not in st.session_state: st.session_state.camera_on = False
         if 'ai_menu' not in st.session_state:
             st.session_state.ai_menu = ""
             st.session_state.ai_calories = 0
             for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
             st.session_state.ai_quality = "좋은 음식"
             
-        col_btn, _ = st.columns([1, 1])
-        with col_btn:
-            if not st.session_state.camera_on:
-                if st.button("📷 스마트 카메라 켜기", use_container_width=True):
-                    st.session_state.camera_on = True
-                    st.rerun()
-            else:
-                if st.button("❌ 카메라 닫기", use_container_width=True):
-                    st.session_state.camera_on = False
-                    st.rerun()
-                    
-        if st.session_state.camera_on:
+        input_mode = st.radio("▶ 기록 방식", ["📷 스마트 카메라", "✍️ 직접 입력"], horizontal=True)
+        
+        if input_mode == "📷 스마트 카메라":
             uploaded_file = st.camera_input("알아서 인식합니다", label_visibility="collapsed")
             if uploaded_file is not None:
-                if st.button("🔍 AI 심층 영양소 분석"):
+                if st.button("🔍 AI 심층 영양소 분석", use_container_width=True):
                     if not GEMINI_API_KEY: st.error("API 금고가 비어있습니다.")
                     else:
-                        with st.spinner("AI가 고화질 이미지를 즉시 전송하여 정밀 판독 중입니다..."):
+                        with st.spinner("AI가 부피와 양념을 고려하여 정밀 판독 중입니다..."):
                             try:
                                 img_bytes = uploaded_file.getvalue()
                                 result_text = analyze_food_image(img_bytes, GEMINI_API_KEY)
@@ -457,98 +458,88 @@ if menu == "📝 일일 기록 (메인)":
                                     for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']:
                                         st.session_state[f'ai_{k}'] = float(ai_data.get(k, 0))
                                     st.session_state.ai_quality = ai_data.get("quality", "좋은 음식")
-                                    st.success(f"✅ 정밀 분석 완료! (인식된 메뉴: {st.session_state.ai_menu})")
+                                    st.toast(f"✅ 분석 완료: {st.session_state.ai_menu}")
                                 else: st.error("데이터 형식 반환에 실패했습니다.")
                             except Exception as e: st.error(f"통신 에러: {e}")
 
-        with st.expander("✍️ 수동 입력 및 추출된 영양성분 확인", expanded=True):
-            with st.form("diet_tracking_form"):
-                c01, c02 = st.columns(2)
-                with c01: menu_name = st.text_input("메뉴 이름", st.session_state.ai_menu)
-                with c02: calories_v = st.text_input("총 칼로리(kcal)", value=str(st.session_state.ai_calories))
-                
-                c1, c2, c3 = st.columns(3)
-                with c1: carb_v = st.text_input("탄수화물(g)", value=str(st.session_state.ai_carb))
-                with c2: protein_v = st.text_input("단백질(g)", value=str(st.session_state.ai_protein))
-                with c3: fat_v = st.text_input("지방(g)", value=str(st.session_state.ai_fat))
-                
-                c4, c5, c6 = st.columns(3)
-                with c4: sugar_v = st.text_input("당류(g)", value=str(st.session_state.ai_sugar))
-                with c5: sodium_v = st.text_input("나트륨(mg)", value=str(st.session_state.ai_sodium))
-                with c6: fiber_v = st.text_input("식이섬유(g)", value=str(st.session_state.ai_fiber))
-                
-                sat_fat_v = st.session_state.ai_sat_fat
-                trans_fat_v = st.session_state.ai_trans_fat
-                
-                if st.form_submit_button("식단 기록 시작 (클라우드 임시저장)", type="primary"):
-                    try:
-                        cal = float(calories_v)
-                        carb, protein, fat = float(carb_v), float(protein_v), float(fat_v)
-                        sugar, sodium, fiber = float(sugar_v), float(sodium_v), float(fiber_v)
-                        
-                        m_name = menu_name.strip() if menu_name.strip() else "직접 입력 식단"
-                        q = st.session_state.ai_quality
-                        
-                        c.execute('SELECT id FROM diet_logs WHERE date=? AND meal_time=? AND menu_name=?', (today_str, user_start_time.strip(), m_name))
-                        if c.fetchone():
-                            st.error("⚠️ 방금 동일한 시간과 메뉴로 기록된 데이터가 있습니다. (중복 클릭 방지)")
-                        else:
-                            with st.spinner("클라우드에 안전하게 동기화 중입니다..."):
-                                c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
-                                          (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, user_start_time.strip(), "", q))
-                                
-                                conn.commit()
-                                is_success = commit_and_sync(conn, ['diet_logs'])
+        with st.form("diet_tracking_form"):
+            c01, c02 = st.columns(2)
+            with c01: menu_name = st.text_input("메뉴 이름", st.session_state.ai_menu)
+            with c02: calories_v = st.text_input("총 칼로리(kcal)", value=str(st.session_state.ai_calories))
+            
+            c1, c2, c3 = st.columns(3)
+            with c1: carb_v = st.text_input("탄수화물(g)", value=str(st.session_state.ai_carb))
+            with c2: protein_v = st.text_input("단백질(g)", value=str(st.session_state.ai_protein))
+            with c3: fat_v = st.text_input("지방(g)", value=str(st.session_state.ai_fat))
+            
+            c4, c5, c6 = st.columns(3)
+            with c4: sugar_v = st.text_input("당류(g)", value=str(st.session_state.ai_sugar))
+            with c5: sodium_v = st.text_input("나트륨(mg)", value=str(st.session_state.ai_sodium))
+            with c6: fiber_v = st.text_input("식이섬유(g)", value=str(st.session_state.ai_fiber))
+            
+            sat_fat_v = st.session_state.ai_sat_fat
+            trans_fat_v = st.session_state.ai_trans_fat
+            
+            if st.form_submit_button("식단 기록 시작 (클라우드 동기화)", type="primary"):
+                try:
+                    cal = float(calories_v)
+                    carb, protein, fat = float(carb_v), float(protein_v), float(fat_v)
+                    sugar, sodium, fiber = float(sugar_v), float(sodium_v), float(fiber_v)
+                    
+                    m_name = menu_name.strip() if menu_name.strip() else "직접 입력 식단"
+                    q = st.session_state.ai_quality
+                    
+                    c.execute('SELECT id FROM diet_logs WHERE date=? AND meal_time=? AND menu_name=?', (today_str, user_start_time.strip(), m_name))
+                    if c.fetchone():
+                        st.error("⚠️ 방금 동일한 시간과 메뉴로 기록된 데이터가 있습니다.")
+                    else:
+                        with st.spinner("클라우드에 안전하게 동기화 중입니다..."):
+                            c.execute('INSERT INTO diet_logs (date, meal_type, menu_name, calories, carb, protein, fat, sugar, sat_fat, trans_fat, sodium, fiber, meal_time, meal_end_time, quality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
+                                      (today_str, meal_type, m_name, cal, carb, protein, fat, sugar, sat_fat_v, trans_fat_v, sodium, fiber, user_start_time.strip(), "", q))
                             
-                            if is_success:
-                                st.session_state.ai_menu = ""
-                                st.session_state.ai_calories = 0
-                                for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
-                                st.session_state.meal_start_success = True
-                                st.rerun() 
-                    except ValueError: 
-                        st.error("수치는 반드시 숫자만 입력해주세요.")
-        
-        if st.session_state.get("meal_start_success"):
-            st.success("✅ 저장이 완료되었습니다! 편안한 식사 후 [📅 달력 조회] 탭에서 '식사 종료' 버튼을 눌러주세요.")
-            st.session_state.meal_start_success = False
+                            conn.commit()
+                            is_success = commit_and_sync(conn, ['diet_logs'])
+                        
+                        if is_success:
+                            st.session_state.ai_menu = ""
+                            st.session_state.ai_calories = 0
+                            for k in ['carb', 'protein', 'fat', 'sugar', 'sat_fat', 'trans_fat', 'sodium', 'fiber']: st.session_state[f'ai_{k}'] = 0
+                            st.toast("✅ 저장이 완료되었습니다! 식사 종료 시 캘린더 탭을 이용하세요.")
+                except ValueError: 
+                    st.error("수치는 반드시 숫자만 입력해주세요.")
 
     with tabs[1]: 
-        if 'habit_msg' in st.session_state:
-            st.success(st.session_state.habit_msg)
-            del st.session_state.habit_msg
-            
         w_df = pd.read_sql(f"SELECT * FROM daily_habits WHERE date='{today_str}'", conn)
         curr_w = w_df.iloc[0]['water_amt'] if not w_df.empty and pd.notna(w_df.iloc[0]['water_amt']) else 0.0
         curr_w_un = w_df.iloc[0]['water_unit'] if not w_df.empty and pd.notna(w_df.iloc[0]['water_unit']) else "잔"
         curr_bed = w_df.iloc[0]['bed_time'] if not w_df.empty and pd.notna(w_df.iloc[0]['bed_time']) else ""
         curr_wake = w_df.iloc[0]['wake_time'] if not w_df.empty and pd.notna(w_df.iloc[0]['wake_time']) else ""
         
-        st.markdown("### ⏰ 습관 데이터 누적 기록")
-        st.markdown("##### 💧 수분 즉시 추가")
+        st.markdown("### ■ 습관 데이터 누적 기록")
+        st.markdown("##### ▶ 수분 즉시 추가")
         st.info(f"**오늘 누적 생수:** {curr_w} 단위")
         col_w1, col_w2 = st.columns(2)
         with col_w1:
             if st.button("💧 작은 컵 (+1)", use_container_width=True):
-                with st.spinner("클라우드 연동 중..."):
+                with st.spinner("동기화 중..."):
                     if w_df.empty: c.execute("INSERT INTO daily_habits (date, water_unit, water_amt) VALUES (?, '잔', 1.0)", (today_str,))
                     else: c.execute("UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 1.0 WHERE date=?", (today_str,))
                     conn.commit()
                     commit_and_sync(conn, ['daily_habits'])
-                st.session_state.habit_msg = "💧 생수 1단위가 추가되었습니다."
+                st.toast("💧 생수 1단위가 추가되었습니다.")
                 st.rerun()
         with col_w2:
             if st.button("💧 큰 컵 (+2)", use_container_width=True):
-                with st.spinner("클라우드 연동 중..."):
+                with st.spinner("동기화 중..."):
                     if w_df.empty: c.execute("INSERT INTO daily_habits (date, water_unit, water_amt) VALUES (?, '잔', 2.0)", (today_str,))
                     else: c.execute("UPDATE daily_habits SET water_amt = coalesce(water_amt, 0) + 2.0 WHERE date=?", (today_str,))
                     conn.commit() 
                     commit_and_sync(conn, ['daily_habits'])
-                st.session_state.habit_msg = "💧 생수 2단위가 추가되었습니다."
+                st.toast("💧 생수 2단위가 추가되었습니다.")
                 st.rerun()
                 
         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
-        st.markdown("##### ☕ 음료 카테고리 누적")
+        st.markdown("##### ▶ 음료 카테고리 누적")
         selected_b_name = st.selectbox("마신 음료 분류 선택", BEV_CATEGORIES)
         
         b_df = pd.read_sql(f"SELECT * FROM beverage_logs WHERE date='{today_str}' AND bev_name='{selected_b_name}'", conn)
@@ -559,26 +550,26 @@ if menu == "📝 일일 기록 (메인)":
         col_b1, col_b2 = st.columns(2)
         with col_b1:
             if st.button("☕ 작은 캔 (+1)", use_container_width=True):
-                with st.spinner("클라우드 연동 중..."):
+                with st.spinner("동기화 중..."):
                     if b_df.empty: c.execute("INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES (?, ?, 1.0, '작은 캔')", (today_str, selected_b_name))
                     else: c.execute("UPDATE beverage_logs SET amount = amount + 1.0 WHERE id=?", (int(b_df.iloc[0]['id']),))
                     conn.commit()
                     commit_and_sync(conn, ['beverage_logs'])
-                st.session_state.habit_msg = f"☕ [{selected_b_name}] 1단위 추가 완료."
+                st.toast(f"☕ [{selected_b_name}] 1단위 추가 완료.")
                 st.rerun()
         with col_b2:
             if st.button("☕ 큰 캔 (+2)", use_container_width=True):
-                with st.spinner("클라우드 연동 중..."):
+                with st.spinner("동기화 중..."):
                     if b_df.empty: c.execute("INSERT INTO beverage_logs (date, bev_name, amount, unit) VALUES (?, ?, 2.0, '큰 캔')", (today_str, selected_b_name))
                     else: c.execute("UPDATE beverage_logs SET amount = amount + 2.0 WHERE id=?", (int(b_df.iloc[0]['id']),))
                     conn.commit()
                     commit_and_sync(conn, ['beverage_logs'])
-                st.session_state.habit_msg = f"☕ [{selected_b_name}] 2단위 추가 완료."
+                st.toast(f"☕ [{selected_b_name}] 2단위 추가 완료.")
                 st.rerun()
 
         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
         with st.form("habit_tracker_form"):
-            st.markdown("##### 🛠️ 습관 데이터 수기 변경 및 일괄 수정")
+            st.markdown("##### # 습관 데이터 수기 변경 및 일괄 수정")
             ch1, ch2 = st.columns(2)
             with ch1: bed_t_str = st.text_input("취침 시간 (미입력 시 비워두기)", value=curr_bed)
             with ch2: wake_t_str = st.text_input("기상 시간", value=curr_wake)
@@ -593,7 +584,7 @@ if menu == "📝 일일 기록 (메인)":
             with cb1: b_unit = st.selectbox(f"[{selected_b_name}] 단위", ["잔", "작은 캔", "큰 캔"], index=b_idx)
             with cb2: bev_manual_str = st.text_input(f"[{selected_b_name}] 섭취량 (수기 조작)", value=str(curr_b_amt))
             
-            if st.form_submit_button("로컬 데이터베이스 업데이트"):
+            if st.form_submit_button("일괄 업데이트"):
                 try:
                     w_man_amt = float(water_manual_str)
                     b_man_amt = float(bev_manual_str)
@@ -614,21 +605,19 @@ if menu == "📝 일일 기록 (메인)":
                         conn.commit() 
                         is_success = commit_and_sync(conn, ['daily_habits', 'beverage_logs'])
                     if is_success:
-                        st.success("데이터베이스에 완벽히 업데이트되었습니다!")
+                        st.toast("✅ 데이터베이스 일괄 업데이트 완료")
                 except ValueError:
                     st.error("섭취량은 숫자만 입력해야 합니다.")
 
     with tabs[2]: 
-        st.markdown("### 🏋️ 운동 기록 및 실시간 타이머")
-        st.info("운동 종목을 먼저 선택한 후 타이머를 돌리거나, 아래 폼에서 수동으로 시간을 직접 기입하세요.")
-        
+        st.markdown("### ■ 운동 기록 및 실시간 타이머")
         ex_options = {"걷기/산책 (MET 3.8)": 3.8, "자전거/수영 (MET 7.0)": 7.0, "러닝/조깅 (MET 8.0)": 8.0, "웨이트 트레이닝 (MET 5.0)": 5.0, "요가/스트레칭 (MET 3.0)": 3.0, "천국의 계단/스텝밀 (MET 9.0)": 9.0}
         
         if 'active_ex_name' not in st.session_state: st.session_state.active_ex_name = list(ex_options.keys())[0]
-        selected_ex = st.selectbox("1️⃣ 수행할 운동 종목 선택", list(ex_options.keys()), index=list(ex_options.keys()).index(st.session_state.active_ex_name))
+        selected_ex = st.selectbox("▶ 수행할 운동 종목 선택", list(ex_options.keys()), index=list(ex_options.keys()).index(st.session_state.active_ex_name))
         st.session_state.active_ex_name = selected_ex
         
-        st.markdown("##### 2️⃣ 실시간 타이머 가동")
+        st.markdown("##### ▶ 실시간 타이머 가동")
         if 'ex_start' not in st.session_state: st.session_state.ex_start = None
         if 'ex_mins' not in st.session_state: st.session_state.ex_mins = 0
         
@@ -645,15 +634,15 @@ if menu == "📝 일일 기록 (메인)":
                     st.session_state.ex_mins = max(1, int(diff.total_seconds() / 60))
                     st.session_state.ex_start = None
                     st.rerun()
-                else: st.warning("진행 중인 타이머가 없습니다.")
+                else: st.toast("진행 중인 타이머가 없습니다.")
                     
         if st.session_state.ex_start:
-            st.success(f"🏃 [{st.session_state.active_ex_name}] 진행 중... (시작: {st.session_state.ex_start.strftime('%H:%M')})")
+            st.info(f"🏃 [{st.session_state.active_ex_name}] 진행 중... (시작: {st.session_state.ex_start.strftime('%H:%M')})")
         
         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
 
         with st.form("exercise_tracker"):
-            st.markdown("##### 3️⃣ 시간 확정 및 저장")
+            st.markdown("##### # 시간 확정 및 저장")
             ex_min_str = st.text_input("수행한 운동 시간 (분)", value=str(st.session_state.ex_mins if st.session_state.ex_mins > 0 else 30))
             
             if st.form_submit_button("로컬 데이터베이스 저장"):
@@ -668,22 +657,16 @@ if menu == "📝 일일 기록 (메인)":
                         conn.commit() 
                         commit_and_sync(conn, ['exercise_logs'])
                     st.session_state.ex_mins = 0
-                    st.success(f"🔥 총 {burned_cal}kcal 소모 기록 완료!")
+                    st.toast(f"✅ 총 {burned_cal}kcal 소모 기록 완료!")
                 except ValueError: st.error("숫자만 입력해주세요.")
 
     with tabs[3]:
-        st.markdown("##### 📉 오늘의 체성분 입력 (PDF 연동)")
-        
-        if st.session_state.get("weight_save_success"):
-            st.success("✅ ☁️ 체성분 데이터가 클라우드 및 로컬에 완벽하게 저장되었습니다!")
-            st.session_state.weight_save_success = False
-
-        st.info("💡 **앳플리(Atflee) 체성분 PDF 결과지**를 업로드하면 상세 데이터를 자동 기록합니다.")
+        st.markdown("##### ■ 오늘의 체성분 입력 (PDF 연동)")
         
         pdf_file = st.file_uploader("PDF 파일 업로드 (iOS 파일 앱 연동)", type=['pdf'], label_visibility="collapsed")
         
         if pdf_file is not None:
-            if st.button("🔍 AI 체성분 데이터 자동 추출"):
+            if st.button("🔍 AI 체성분 데이터 자동 추출", use_container_width=True):
                 if not GEMINI_API_KEY: 
                     st.error("API 금고가 비어있습니다.")
                 else:
@@ -700,7 +683,7 @@ if menu == "📝 일일 기록 (메인)":
                                 st.session_state.ai_fat_pct = float(w_data.get("body_fat_percent", 0.0))
                                 st.session_state.ai_visceral_fat = int(w_data.get("visceral_fat", 0))
                                 st.session_state.ai_bmr = int(w_data.get("bmr", 0))
-                                st.success(f"✅ 추출 완료! (체중: {st.session_state.ai_weight}kg | 골격근량: {st.session_state.ai_muscle}kg | 체지방률: {st.session_state.ai_fat_pct}%)")
+                                st.toast(f"✅ 추출 완료! (체중: {st.session_state.ai_weight}kg)")
                             else:
                                 st.error("데이터를 명확히 찾지 못했습니다.")
                         except Exception as e:
@@ -724,7 +707,7 @@ if menu == "📝 일일 기록 (메인)":
             with c4: vf_str = st.text_input("내장지방지수", value=default_v)
             with c5: bmr_str = st.text_input("기초대사량 (kcal)", value=default_bmr)
             
-            if st.form_submit_button("로컬 데이터베이스 업데이트", type="primary"):
+            if st.form_submit_button("데이터베이스 업데이트", type="primary"):
                 try:
                     t_w, t_m, t_f = float(today_w_str), float(muscle_str), float(fat_pct_str)
                     t_v, t_bmr = int(vf_str), int(bmr_str)
@@ -744,14 +727,13 @@ if menu == "📝 일일 기록 (메인)":
                     if is_success:
                         for k in ['ai_weight', 'ai_muscle', 'ai_fat_pct', 'ai_visceral_fat', 'ai_bmr']:
                             if k in st.session_state: del st.session_state[k]
-                        st.session_state.weight_save_success = True
-                        st.rerun()
+                        st.toast("✅ 체성분 데이터 저장 완료!")
                 except ValueError: 
                     st.error("숫자만 입력해주세요.")
 
     if len(tabs) == 5: 
         with tabs[4]:
-            st.markdown("##### 🩸 주기 업데이트")
+            st.markdown("##### ■ 주기 업데이트")
             with st.form("period_tracker"):
                 last_p_date = st.text_input("최근 생리 시작일 (예: 2026-08-01)", value=str(safe_get(p.get('last_period_date'), "")))
                 if st.form_submit_button("로컬 저장"):
@@ -761,16 +743,16 @@ if menu == "📝 일일 기록 (메인)":
                             c.execute("UPDATE user_profile SET last_period_date = ? WHERE id = ?", (last_p_date, int(p['id'])))
                             conn.commit()
                             commit_and_sync(conn, ['user_profile'])
-                        st.success("저장 완료.")
+                        st.toast("✅ 주기 저장 완료.")
                     except ValueError: st.error("날짜 형식을 맞춰주세요.")
 
 elif menu == "📅 달력 조회":
-    st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
+    st.markdown("<h1>🥑 Diet 일지</h1>", unsafe_allow_html=True)
     
     selected_date = st.date_input("📅 조회할 데이터베이스 날짜를 선택하세요", value=now.date())
     view_date_str = selected_date.strftime("%Y-%m-%d")
     
-    st.markdown(f"<div class='report-title'>📊 [{view_date_str}] 클라우드 데이터 종합 내역</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='report-title'>📊 [{view_date_str}] 종합 내역</div>", unsafe_allow_html=True)
     
     start_date = selected_date - timedelta(days=6)
     start_str = start_date.strftime("%Y-%m-%d")
@@ -837,7 +819,7 @@ elif menu == "📅 달력 조회":
     if burned_cal > 0:
         st.info(f"🏋️ 해당 일자에 운동으로 **{int(burned_cal)}kcal**를 추가 소모하여 목표 허용량이 재설정되었습니다.")
     
-    st.markdown("##### 🎯 칼로리 및 매크로 섭취 결과")
+    st.markdown("##### ■ 칼로리 및 매크로 섭취 결과")
     st.markdown(f"<div class='macro-box {cal_class}'><div class='macro-title'>목표 {t_cal} kcal ── 섭취 {int(e_cal)} kcal</div><div class='macro-val'>{'잔여: +' + str(int(diff_cal)) if diff_cal >= 0 else '초과: ' + str(int(abs(diff_cal)))} kcal</div></div>", unsafe_allow_html=True)
     
     def get_macro_html(name, target, eaten):
@@ -850,14 +832,14 @@ elif menu == "📅 달력 조회":
     
     st.markdown(f"<div class='micro-box'>🔬 <b>미량 영양소 추적:</b> 나트륨 <b>{int(e_sodium)}mg</b> (권장 2000mg 이하) &nbsp; | &nbsp; 식이섬유 <b>{int(e_fiber)}g</b> (권장 25g 이상)</div>", unsafe_allow_html=True)
 
-    # 💡 조회일자 기준, 종료되지 않은 '모든' 식사를 식별
+    # 💡 조회일자 기준, 진행 중인 식사 모두 펄스 애니메이션 적용
     c.execute(f"SELECT id, menu_name, meal_time FROM diet_logs WHERE date='{view_date_str}' AND (meal_end_time IS NULL OR meal_end_time = '' OR LOWER(meal_end_time) IN ('nan', 'none', 'null'))")
     active_meals = c.fetchall()
     
-    st.markdown("##### 🍽 식단 기록 목록")
+    st.markdown("##### ▶ 식단 기록 목록")
     if active_meals:
         am_names = ", ".join([am[1] for am in active_meals])
-        st.markdown(f"<div style='background:#FFF3CD; padding:8px 12px; border-radius:6px; border-left:4px solid #F1C40F; margin-bottom:12px;'><span style='font-size:0.9rem; font-weight:bold; color:#7D6608;'>⏳ 현재 진행 중: {am_names}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='ongoing-meal'><span style='font-size:0.9rem; font-weight:bold; color:#7D6608;'>⏳ 현재 진행 중: {am_names}</span></div>", unsafe_allow_html=True)
 
     table_html = "<table class='diet-table'><tr><th style='width:25%;'>시간</th><th style='width:50%;'>메뉴 (상세영양소)</th><th style='width:25%;'>평가</th></tr>"
     if logs.empty: table_html += "<tr><td colspan='3' style='color:#7F8C8D; padding:20px 0;'>기록된 식단이 없습니다.</td></tr>"
@@ -873,8 +855,8 @@ elif menu == "📅 달력 조회":
             else:
                 end_t = "<span style='color:#E74C3C;'>(식사 중)</span>"
                 
-            # 💡 하드코딩되었던 UI를 확장하여 상세 칼로리 및 탄단지 표출 로직 적용
-            macro_info = f"<br><span style='font-size:0.8rem; color:#7F8C8D;'>{int(row.get('calories', 0))}kcal | 탄 {int(row.get('carb', 0))}g 단 {int(row.get('protein', 0))}g 지 {int(row.get('fat', 0))}g</span>"
+            # 💡 UI 가독성 극대화: 줄바꿈 및 아이콘 추가
+            macro_info = f"<br><span style='font-size:0.85rem; color:#7F8C8D; display:block; margin-top:4px;'>🔥 {int(row.get('calories', 0))} kcal<br>🌾 탄: {int(row.get('carb', 0))}g &nbsp;|&nbsp; 🥩 단: {int(row.get('protein', 0))}g &nbsp;|&nbsp; 🧈 지: {int(row.get('fat', 0))}g</span>"
             table_html += f"<tr><td><b>{row['meal_time']}</b><br><span style='font-size:0.75rem; color:#7F8C8D;'>{end_t}</span></td><td><b style='color:#2C3E50;'>{row['menu_name']}</b>{macro_info}</td><td>{badge}</td></tr>"
     table_html += "</table>"
     st.markdown(table_html, unsafe_allow_html=True)
@@ -883,18 +865,13 @@ elif menu == "📅 달력 조회":
         col_blank, col_end_btn = st.columns([7, 3])
         with col_end_btn:
             if st.button("🏁 일괄 식사 종료", key="end_meal_btn_bottom", type="primary", use_container_width=True):
-                with st.spinner("클라우드와 동기화 중입니다..."):
+                with st.spinner("동기화 중..."):
                     now_str = now.strftime("%H:%M")
-                    # 💡 단일 ID 지정(LIMIT 1) 업데이트가 아닌, 현재 진행 중인 '모든' 식사를 일괄 종료
                     c.execute("UPDATE diet_logs SET meal_end_time=? WHERE date=? AND (meal_end_time IS NULL OR meal_end_time='' OR LOWER(meal_end_time) IN ('nan', 'none', 'null'))", (now_str, view_date_str))
                     conn.commit()
                     commit_and_sync(conn, ['diet_logs', 'daily_habits', 'beverage_logs', 'exercise_logs', 'daily_weight'])
-                st.session_state.meal_end_success = True
+                st.toast("✅ 진행 중인 모든 식사가 종료되었습니다.")
                 st.rerun()
-
-    if st.session_state.get("meal_end_success"):
-        st.success("✅ 진행 중인 모든 식사가 종료되었습니다. 공복 타이머가 가동됩니다.")
-        st.session_state.meal_end_success = False
     
     if not logs.empty:
         with st.expander("🛠️ 식단 삭제하기"):
@@ -902,12 +879,12 @@ elif menu == "📅 달력 조회":
                 del_options = {f"[{row['meal_time']}] {row['menu_name']} (고유번호: {row['db_rowid']})": row['db_rowid'] for idx, row in logs.iterrows()}
                 selected_del_key = st.selectbox("삭제할 식단 선택", options=list(del_options.keys()))
                 if st.form_submit_button("영구 삭제"):
-                    with st.spinner("삭제 및 클라우드 연동 중..."):
+                    with st.spinner("삭제 연동 중..."):
                         c.execute("DELETE FROM diet_logs WHERE rowid = ?", (del_options[selected_del_key],))
                         commit_and_sync(conn, ['diet_logs'])
                     st.rerun()
 
-    st.markdown("##### 🏃 운동 기록 목록")
+    st.markdown("##### ▶ 운동 기록 목록")
     ex_table = "<table class='diet-table'><tr><th style='width:50%;'>운동 종목</th><th style='width:25%;'>시간</th><th style='width:25%;'>소모량</th></tr>"
     if ex_df.empty: ex_table += "<tr><td colspan='3' style='color:#7F8C8D; padding:20px 0;'>기록된 운동이 없습니다.</td></tr>"
     else:
@@ -915,19 +892,8 @@ elif menu == "📅 달력 조회":
             ex_table += f"<tr><td><b style='color:#2C3E50;'>{row['ex_name']}</b></td><td><b>{row['duration']}</b>분</td><td><span class='badge' style='background:#FADBD8; color:#C0392B;'>🔥 {row['calories_burned']}</span></td></tr>"
     ex_table += "</table>"
     st.markdown(ex_table, unsafe_allow_html=True)
-    
-    if not ex_df.empty:
-        with st.expander("🛠️ 운동 기록 삭제하기"):
-            with st.form("delete_ex_form"):
-                ex_del_opts = {f"{row['ex_name']} ({row['duration']}분)": row['id'] for idx, row in ex_df.iterrows()}
-                selected_ex_key = st.selectbox("삭제할 운동 선택", options=list(ex_del_opts.keys()))
-                if st.form_submit_button("영구 삭제"):
-                    with st.spinner("삭제 및 클라우드 연동 중..."):
-                        c.execute("DELETE FROM exercise_logs WHERE id = ?", (ex_del_opts[selected_ex_key],))
-                        commit_and_sync(conn, ['exercise_logs'])
-                    st.rerun()
 
-    st.markdown("##### 📋 습관 및 체중 피드백")
+    st.markdown("##### ■ 습관 및 체중 피드백")
     habit_df = pd.read_sql(f"SELECT * FROM daily_habits WHERE date='{view_date_str}'", conn)
     
     habit_table = "<table class='diet-table'><tr><th style='width:20%;'>항목</th><th style='width:25%;'>상태</th><th style='width:55%;'>전문가 피드백</th></tr>"
@@ -939,6 +905,7 @@ elif menu == "📅 달력 조회":
         w_amt = h_row['water_amt'] if pd.notna(h_row['water_amt']) else 0.0
         w_un = h_row['water_unit'] if pd.notna(h_row['water_unit']) else "잔"
         
+        # 💡 프로필 목표 연동 수면 피드백
         if bed_str and wake_str:
             try:
                 t_b, t_w = datetime.strptime(bed_str.strip(), "%H:%M"), datetime.strptime(wake_str.strip(), "%H:%M")
@@ -946,26 +913,45 @@ elif menu == "📅 달력 조회":
                 if sleep_mins < 0: sleep_mins += 24 * 60
                 sleep_hrs = round(sleep_mins / 60, 1)
                 
-                if sleep_hrs >= 7.0: s_badge, s_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{sleep_hrs}시간 수면, 회복 양호"
-                elif sleep_hrs >= 6.0: s_badge, s_msg = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의</span>", f"{sleep_hrs}시간 수면, 대사 저하 우려"
-                else: s_badge, s_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{sleep_hrs}시간 수면, 코르티솔 위험"
+                tgt_bed = str(safe_get(p.get('sleep_bed_hr'), '23:30')).strip()
+                tgt_wake = str(safe_get(p.get('sleep_wake_hr'), '07:00')).strip()
+                try:
+                    tb_tgt, tw_tgt = datetime.strptime(tgt_bed, "%H:%M"), datetime.strptime(tgt_wake, "%H:%M")
+                    tgt_mins = (tw_tgt.hour * 60 + tw_tgt.minute) - (tb_tgt.hour * 60 + tb_tgt.minute)
+                    if tgt_mins < 0: tgt_mins += 24 * 60
+                    target_hrs = round(tgt_mins / 60, 1)
+                except: target_hrs = 7.5
+
+                diff_hrs = round(sleep_hrs - target_hrs, 1)
+                
+                if sleep_hrs >= target_hrs: 
+                    s_badge = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 달성</span>"
+                    s_msg = f"목표 수면({target_hrs}시간) 충족. <b>{sleep_hrs}시간</b> 수면으로 대사 회복이 양호합니다."
+                elif sleep_hrs >= target_hrs - 1.5: 
+                    s_badge = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의</span>"
+                    s_msg = f"목표 수면({target_hrs}시간) 대비 <b>{abs(diff_hrs)}시간 부족</b>. 체지방 연소 효율이 떨어질 수 있습니다."
+                else: 
+                    s_badge = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>"
+                    s_msg = f"목표 수면 대비 <b>{abs(diff_hrs)}시간 극심한 부족</b>. 코르티솔 분비로 인한 대사 저하에 주의하세요."
+                    
                 habit_table += f"<tr><td><b>수면</b><br><span style='font-size:0.75rem; color:#7F8C8D;'>{bed_str}~{wake_str}</span></td><td>{s_badge}</td><td style='text-align:left; font-size:0.85rem;'>{s_msg}</td></tr>"
             except: pass
 
+        # 💡 프로필 목표 연동 수분 피드백
         if w_amt > 0:
-            target_water = 8.0 if w_un == "잔" else (6.0 if w_un == "컵" else 2.0)
+            target_water = float(safe_get(p.get('water_cnt'), 8.0))
             w_badge = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>" if w_amt >= target_water else ("<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의</span>" if w_amt >= target_water * 0.7 else "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>")
-            w_msg = f"생수 {w_amt}{w_un} 섭취 완료. " + ("수분 대사 원활." if w_amt >= target_water else "수분 부족.")
+            w_msg = f"일일 목표 {target_water}{w_un} 중 <b>{w_amt}{w_un}</b> 섭취. " + ("수분 대사 원활." if w_amt >= target_water else f"달성까지 <b>{round(target_water - w_amt, 1)}{w_un}</b> 부족합니다.")
             habit_table += f"<tr><td><b>수분</b></td><td>{w_badge}</td><td style='text-align:left; font-size:0.85rem;'>{w_msg}</td></tr>"
 
     for idx, b_row in bev_df.iterrows():
         b_name, b_amt, b_un = b_row['bev_name'], b_row['amount'], b_row['unit']
         
-        if b_name == "아메리카노 / 에스프레소": b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 당류가 없어 대사에 좋지만, 이뇨 작용으로 수분이 손실되니 마신 양의 2배만큼 생수를 보충하세요. (늦은 오후 섭취 시 수면 방해 주의)"
+        if b_name == "아메리카노 / 에스프레소": b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 당류가 없어 대사에 좋지만, 이뇨 작용으로 수분이 손실되니 마신 양의 2배만큼 생수를 보충하세요."
         elif b_name == "차류 (녹차, 홍차, 콤부차 등)": b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 수분 보충과 항산화에 좋으나, 카페인이 든 차는 늦은 시간 섭취를 피하는 것이 좋습니다."
-        elif b_name == "제로 칼로리 음료 (제로콜라 등)": b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 혈당을 올리진 않으나 인공감미료가 뇌의 보상 회로를 자극해 가짜 배고픔을 유발할 수 있습니다. 단독 섭취보다는 식사 중에만 드세요."
-        elif b_name in ["단백질 보충 액상", "일반 우유 / 무가당 두유"]: b_badge, b_msg = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의</span>", f"{b_amt}{b_un} 섭취. 영양가는 높으나 '칼로리'가 있어 단식(공복) 시간을 깨뜨립니다. 식사 대용이나 운동 직후에 섭취하세요."
-        elif b_name == "달콤한 커피류 (믹스커피, 바닐라라떼 등)": b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 정제당과 포화지방(크림)의 결합은 혈당 스파이크와 복부 체지방 축적을 가장 빠르고 강하게 유발합니다."
+        elif b_name == "제로 칼로리 음료 (제로콜라 등)": b_badge, b_msg = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 적정</span>", f"{b_amt}{b_un} 섭취. 혈당을 올리진 않으나 인공감미료가 뇌의 보상 회로를 자극해 가짜 배고픔을 유발할 수 있습니다. 식사 중에만 드세요."
+        elif b_name in ["단백질 보충 액상", "일반 우유 / 무가당 두유"]: b_badge, b_msg = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 주의</span>", f"{b_amt}{b_un} 섭취. 영양가는 높으나 '칼로리'가 있어 단식 시간을 깨뜨립니다. 식사 대용이나 운동 직후에 섭취하세요."
+        elif b_name == "달콤한 커피류 (믹스커피, 바닐라라떼 등)": b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 정제당과 포화지방(크림)의 결합은 혈당 스파이크와 복부 체지방 축적을 강하게 유발합니다."
         elif b_name == "과일 주스 / 스무디": b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 과일을 갈아 마시면 식이섬유 구조가 파괴되어, 액상과당과 똑같이 간에 지방으로 직접 축적됩니다."
         else: b_badge, b_msg = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 위험</span>", f"{b_amt}{b_un} 섭취. 액상과당은 인슐린을 급격히 분비시켜 체지방 연소 모드를 즉시 중단시킵니다."
 
@@ -984,13 +970,13 @@ elif menu == "📅 달력 조회":
             diff = round(day_w - prev_w, 1)
             
             if diff <= -0.1:
-                w_badge, w_msg, w_disp = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 감량</span>", f"전일 대비 <b>{abs(diff)}kg 감량</b>되었습니다. 체지방 연소가 원활한 긍정적 지표입니다. 현재 대사 상태를 유지하세요.", f"{day_w}kg <span style='color:#1E8449; font-weight:bold;'>(⬇ {abs(diff)}kg)</span>"
+                w_badge, w_msg, w_disp = "<span class='badge' style='background:#D5F5E3; color:#1E8449;'>🟢 감량</span>", f"전일 대비 <b>{abs(diff)}kg 감량</b>되었습니다. 체지방 연소가 원활한 긍정적 지표입니다.", f"{day_w}kg <span style='color:#1E8449; font-weight:bold;'>(⬇ {abs(diff)}kg)</span>"
             elif diff >= 0.1:
-                w_badge, w_msg, w_disp = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 증가</span>", f"전일 대비 <b>{diff}kg 증가</b>했습니다. 단순 수분 정체 및 글리코겐 로딩일 확률이 높으니 스트레스 받지 마시고, 전날 나트륨 섭취량을 점검하세요.", f"{day_w}kg <span style='color:#C0392B; font-weight:bold;'>(⬆ {diff}kg)</span>"
+                w_badge, w_msg, w_disp = "<span class='badge' style='background:#FADBD8; color:#C0392B;'>🚨 증가</span>", f"전일 대비 <b>{diff}kg 증가</b>했습니다. 단순 수분 정체일 확률이 높으니 스트레스 받지 마세요.", f"{day_w}kg <span style='color:#C0392B; font-weight:bold;'>(⬆ {diff}kg)</span>"
             else:
-                w_badge, w_msg, w_disp = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 유지/정체</span>", "전일과 체중이 동일합니다. 대사 적응기이거나 수분 정체기일 수 있습니다. 충분한 수분 섭취와 활동량 유지가 필요합니다.", f"{day_w}kg <span style='color:#D4AC0D; font-weight:bold;'>( - )</span>"
+                w_badge, w_msg, w_disp = "<span class='badge' style='background:#FCF3CF; color:#D4AC0D;'>🟡 유지/정체</span>", "전일과 체중이 동일합니다. 대사 적응기이거나 수분 정체기일 수 있습니다.", f"{day_w}kg <span style='color:#D4AC0D; font-weight:bold;'>( - )</span>"
         else:
-            w_badge, w_msg, w_disp = "<span class='badge' style='background:#F2F3F4; color:#2C3E50;'>기록 시작</span>", "비교할 전일 데이터가 없습니다. 내일부터 일일 변화량 및 전문 피드백이 제공됩니다.", f"{day_w}kg"
+            w_badge, w_msg, w_disp = "<span class='badge' style='background:#F2F3F4; color:#2C3E50;'>기록 시작</span>", "비교할 전일 데이터가 없습니다. 내일부터 변화량 피드백이 제공됩니다.", f"{day_w}kg"
             
         if day_m > 0 and day_f > 0:
             w_msg += f"<br><div style='margin-top:6px; padding-top:6px; border-top:1px dashed #E5E7E9;'><span style='color:#34495E; font-weight:600;'>골격근량: {day_m}kg<br>체지방률: {day_f}%</span></div>"
@@ -1004,17 +990,17 @@ elif menu == "📅 달력 조회":
         st.markdown(habit_table, unsafe_allow_html=True)
 
 elif menu == "📋 대사 진단 리포트":
-    st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
-    st.markdown("### 📋 정밀 대사 진단 리포트")
+    st.markdown("<h1>🥑 Diet 일지</h1>", unsafe_allow_html=True)
+    st.markdown("### ■ 정밀 대사 진단 리포트")
     _, _, _, _, f_text = generate_master_feedback(p)
     st.markdown(f"<div class='report-box'>{f_text}</div>", unsafe_allow_html=True)
 
 elif menu == "⚙️ 정밀 대사 재진단":
-    st.markdown("<h1>🥑 브쌤's Diet 일지</h1>", unsafe_allow_html=True)
-    st.markdown("### ⚙️ 20개 변수 기반 정밀 대사 진단")
+    st.markdown("<h1>🥑 Diet 일지</h1>", unsafe_allow_html=True)
+    st.markdown("### ■ 20개 변수 기반 정밀 대사 진단")
     st.info("이곳에서 분석된 데이터는 클라우드 데이터베이스에 절대 목표치로 영구 저장됩니다.")
     
-    st.markdown("##### 👤 체성분 및 목표 설정")
+    st.markdown("##### ▶ 체성분 및 목표 설정")
     c1, c2 = st.columns(2)
     with c1: g_val = st.selectbox("성별", ["여성", "남성"], index=["여성", "남성"].index(p.get('gender', '여성')) if not is_new_user else 0)
     with c2: a_val_str = st.text_input("만 나이", value=str(p.get('age', 30)))
@@ -1024,7 +1010,7 @@ elif menu == "⚙️ 정밀 대사 재진단":
     with c4: w_val_str = st.text_input("현재 체중 (kg)", value=str(p.get('weight', 60.0)))
     with c5: t_w_val_str = st.text_input("🎯 목표 체중 (kg)", value=str(p.get('target_weight', 55.0)))
     
-    st.markdown("##### 🚶‍♂️ 일일 활동 및 식사 패턴")
+    st.markdown("##### ▶ 일일 활동 및 식사 패턴")
     act_options = ["1단계 (주로 앉아서 생활)", "2단계 (가벼운 활동/운동)", "3단계 (보통 수준의 활동/운동)", "4단계 (육체노동 또는 강도 높은 운동)"]
     try: act_idx = act_options.index(p.get('activity_level', '1단계 (주로 앉아서 생활)'))
     except: act_idx = 0
@@ -1060,7 +1046,7 @@ elif menu == "⚙️ 정밀 대사 재진단":
     
     carb_v = st.selectbox("메인 식단 베이스", ["채소 위주 샐러드", "곡물 샐러드볼", "육류 샐러드", "목초사육 소고기/연어", "비건 식단", "다이어트 정식", "일반 한식 백반", "면류/배달음식"], index=5)
     
-    st.markdown("##### 🍩 간식 및 수분 섭취")
+    st.markdown("##### ▶ 간식 및 수분 섭취")
     snack_v = st.selectbox("주요 간식", ["안 먹음", "로스팅 캐슈넛/참크래커", "단백질바/에너지바", "초콜릿/과자/아이스크림 등"], index=0)
     
     cw1, cw2, cw3 = st.columns(3)
@@ -1107,7 +1093,7 @@ elif menu == "⚙️ 정밀 대사 재진단":
                           (g_val, a_val, h_val, w_val, t_w_val, act_val, exc_val, t_cal, t_c, t_p, t_f, bed_hr, wake_hr, meal_cnt, f_hr, l_hr, carb_v, snack_v, snack_freq, snack_time, snack_amt, w_unit, w_cnt, b_type, b_unit, b_cnt))
                 
                 commit_and_sync(conn, ['user_profile'])
-            st.success("✅ 정밀 대사 진단 데이터가 구글 클라우드에 완벽하게 저장되었습니다! 달력 조회 및 리포트 탭에 정상 연동되었습니다.")
+            st.toast("✅ 정밀 대사 진단 데이터가 저장되었습니다!")
             st.balloons()
             
         except ValueError:
