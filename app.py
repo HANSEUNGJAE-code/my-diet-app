@@ -20,12 +20,16 @@ except:
 
 def get_gsheet_client():
     try:
-        if "GCP_CREDENTIALS" not in st.secrets: return None
+        if "GCP_CREDENTIALS" not in st.secrets: 
+            st.error("🚨 에러 1: 시크릿 금고 자체를 못 찾았거나, 'GCP_CREDENTIALS'라는 변수명이 없습니다.")
+            return None
+            
         creds_json = json.loads(st.secrets["GCP_CREDENTIALS"])
         scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         creds = Credentials.from_service_account_info(creds_json, scopes=scopes)
         return gspread.authorize(creds)
-    except:
+    except Exception as e:
+        st.error(f"🚨 에러 2 (JSON 데이터 해독 실패): {e}")
         return None
 
 # ==========================================
