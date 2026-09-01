@@ -240,26 +240,38 @@ def sync_from_sheets(conn):
         except: pass
     return success
 
+# 오류를 명시적으로 출력하여 디버깅이 가능하게 전면 수정한 구글 시트 업로드 함수
 def commit_and_sync(conn, table_names=None):
     conn.commit()
     client = get_gsheet_client()
-    if not client: return
-    try: sheet = client.open("my_diet_db")
-    except Exception: return
+    if not client: 
+        st.error("GCP 인증 클라이언트를 불러오지 못했습니다. st.secrets 설정을 확인하세요.")
+        return
+        
+    try: 
+        sheet = client.open("my_diet_db")
+    except Exception as e: 
+        st.error(f"구글 시트를 열 수 없습니다. 시트 이름('my_diet_db')과 서비스 계정 편집 권한을 확인하세요: {e}")
+        return
     
     tables = table_names if table_names else ['user_profile', 'daily_habits', 'beverage_logs', 'exercise_logs', 'diet_logs', 'daily_weight']
+    
     for t in tables:
-        try: ws = sheet.worksheet(t)
-        except: ws = sheet.add_worksheet(title=t, rows="100", cols="30")
+        try: 
+            ws = sheet.worksheet(t)
+        except: 
+            ws = sheet.add_worksheet(title=t, rows="100", cols="30")
+            
         try:
             df = pd.read_sql(f"SELECT * FROM {t}", conn)
             ws.clear()
             if not df.empty:
                 clean_df = df.fillna("").astype(str).replace(["nan", "NaN", "None", "<NA>"], "")
                 data = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
-                try: ws.update(values=data, range_name='A1')
-                except Exception: pass
-        except: pass
+                # gspread 버전에 관계없이 동작할 수 있는 위치 기반 인자 사용
+                ws.update('A1', data)
+        except Exception as e: 
+            st.error(f"[{t}] 시트 클라우드 업로드 실패: {e}")
 
 if 'db_synced' not in st.session_state:
     with st.spinner("☁️ 클라우드 데이터베이스와 안전하게 동기화 중입니다..."):
