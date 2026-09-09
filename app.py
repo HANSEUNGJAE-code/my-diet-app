@@ -638,7 +638,7 @@ if menu == "📝 일일 기록 (메인)":
         
         st.markdown("##### ▶ 실시간 타이머 가동")
         if 'ex_start' not in st.session_state: st.session_state.ex_start = None
-        if 'ex_mins' not in st.session_state: st.session_state.ex_mins = 0
+        if 'ex_duration_input' not in st.session_state: st.session_state.ex_duration_input = "30"
         
         t_col1, t_col2 = st.columns(2)
         with t_col1:
@@ -650,19 +650,21 @@ if menu == "📝 일일 기록 (메인)":
                 if st.session_state.ex_start:
                     kst_now = datetime.utcnow() + timedelta(hours=9)
                     diff = kst_now - st.session_state.ex_start
-                    st.session_state.ex_mins = max(1, int(diff.total_seconds() / 60))
+                    calculated_mins = max(1, int(diff.total_seconds() / 60))
+                    
+                    st.session_state.ex_duration_input = str(calculated_mins)
                     st.session_state.ex_start = None
                     st.rerun()
                 else: st.toast("진행 중인 타이머가 없습니다.")
                     
         if st.session_state.ex_start:
-            st.info(f"🏃 [{st.session_state.active_ex_name}] 진행 중... (시작: {st.session_state.ex_start.strftime('%H:%M')})")
+            st.info(f"⏳ [{st.session_state.active_ex_name}] 진행 중... (시작: {st.session_state.ex_start.strftime('%H:%M')})\n\n종료 버튼을 누르면 시간이 자동 계산됩니다.")
         
         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
 
         with st.form("exercise_tracker"):
             st.markdown("##### # 시간 확정 및 저장")
-            ex_min_str = st.text_input("수행한 운동 시간 (분)", value=str(st.session_state.ex_mins if st.session_state.ex_mins > 0 else 30))
+            ex_min_str = st.text_input("수행한 운동 시간 (분)", key="ex_duration_input")
             
             if st.form_submit_button("로컬 데이터베이스 저장"):
                 try:
@@ -675,8 +677,10 @@ if menu == "📝 일일 기록 (메인)":
                         c.execute("INSERT INTO exercise_logs (date, ex_name, duration, calories_burned) VALUES (?, ?, ?, ?)", (today_str, st.session_state.active_ex_name.split(' (')[0], ex_min, burned_cal))
                         conn.commit() 
                         commit_and_sync(conn, ['exercise_logs'])
-                    st.session_state.ex_mins = 0
+                    
+                    st.session_state.ex_duration_input = "30"
                     st.toast(f"🔥 총 {burned_cal}kcal 소모 기록 완료!")
+                    st.rerun()
                 except ValueError: st.error("숫자만 입력해주세요.")
 
     with tabs[3]:
